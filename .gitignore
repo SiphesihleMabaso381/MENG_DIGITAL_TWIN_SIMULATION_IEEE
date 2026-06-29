@@ -1,0 +1,50 @@
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build and packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Test and coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Runtime logs
+*.log
+simulation.log
+
+# Temporary and local artifacts
+checkpoints/
+*.tmp
+*.bak
+
+# Large generated data outputs (keep directory structure, ignore content)
+results/**
+!results/.gitkeep
+
+# Ignore nested feeder-generated result artifacts
+ieee_feeders/**/results/**
+
+# Keep feeder source files, but ignore compressed archives
+ieee_feeders/*.zip
