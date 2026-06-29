@@ -24,6 +24,9 @@ class CustomerType(Enum):
     COMMERCIAL = "commercial"
     INDUSTRIAL = "industrial"
     AGRICULTURAL = "agricultural"
+    PUBLIC_MUNICIPAL = "public_municipal"
+    INSTITUTIONAL = "institutional"
+    BULK = "bulk"
 
 
 class LoadProfileGenerator:
@@ -52,8 +55,63 @@ class LoadProfileGenerator:
         0.92, 0.85, 0.80, 0.75, 0.70, 0.65, 0.62, 0.60,  # 16-00
     ])
     
-    # Day-of-week factors (Monday-Sunday)
-    DOW_FACTORS = np.array([1.00, 1.02, 1.05, 1.08, 1.10, 0.85, 0.75])
+    AGRICULTURAL_DAILY_PROFILE = np.array([
+        0.45, 0.42, 0.40, 0.38, 0.40, 0.52, 0.70, 0.82,
+        0.76, 0.68, 0.60, 0.54, 0.58, 0.62, 0.66, 0.72,
+        0.84, 0.92, 0.95, 0.90, 0.78, 0.64, 0.56, 0.50,
+    ])
+
+    PUBLIC_MUNICIPAL_DAILY_PROFILE = np.array([
+        0.85, 0.88, 0.90, 0.92, 0.88, 0.72, 0.50, 0.38,
+        0.30, 0.28, 0.30, 0.34, 0.38, 0.42, 0.45, 0.48,
+        0.55, 0.68, 0.82, 0.90, 0.95, 0.98, 0.94, 0.90,
+    ])
+
+    INSTITUTIONAL_DAILY_PROFILE = np.array([
+        0.25, 0.22, 0.20, 0.20, 0.24, 0.35, 0.55, 0.72,
+        0.88, 0.96, 1.00, 0.98, 0.94, 0.96, 0.98, 0.95,
+        0.86, 0.72, 0.55, 0.42, 0.35, 0.30, 0.27, 0.25,
+    ])
+
+    BULK_DAILY_PROFILE = np.array([
+        0.88, 0.86, 0.84, 0.84, 0.86, 0.90, 0.95, 0.98,
+        1.00, 1.00, 0.99, 0.98, 0.97, 0.98, 0.99, 1.00,
+        0.99, 0.97, 0.95, 0.93, 0.92, 0.90, 0.89, 0.88,
+    ])
+
+    # Day-of-week factors (Monday-Sunday) per customer class.
+    # These values capture operational behavior differences between sectors.
+    DOW_FACTORS_BY_TYPE = {
+        CustomerType.RESIDENTIAL: np.array([0.98, 1.00, 1.02, 1.03, 1.04, 1.08, 1.06]),
+        CustomerType.COMMERCIAL: np.array([1.00, 1.02, 1.04, 1.05, 1.06, 0.80, 0.65]),
+        CustomerType.INDUSTRIAL: np.array([1.00, 1.01, 1.01, 1.02, 1.02, 0.96, 0.94]),
+        CustomerType.AGRICULTURAL: np.array([0.98, 1.00, 1.01, 1.02, 1.03, 1.00, 0.99]),
+        CustomerType.PUBLIC_MUNICIPAL: np.array([1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00]),
+        CustomerType.INSTITUTIONAL: np.array([1.00, 1.02, 1.03, 1.03, 1.02, 0.72, 0.60]),
+        CustomerType.BULK: np.array([1.00, 1.00, 1.01, 1.01, 1.01, 0.98, 0.98]),
+    }
+
+    # Typical peak demand by customer class (kW).
+    DEFAULT_PEAK_KW_BY_TYPE = {
+        CustomerType.RESIDENTIAL: 8.0,
+        CustomerType.COMMERCIAL: 50.0,
+        CustomerType.INDUSTRIAL: 200.0,
+        CustomerType.AGRICULTURAL: 75.0,
+        CustomerType.PUBLIC_MUNICIPAL: 60.0,
+        CustomerType.INSTITUTIONAL: 80.0,
+        CustomerType.BULK: 500.0,
+    }
+
+    # Seasonal scaling strength by type.
+    SEASONAL_SCALE_BY_TYPE = {
+        CustomerType.RESIDENTIAL: 1.00,
+        CustomerType.COMMERCIAL: 0.90,
+        CustomerType.INDUSTRIAL: 0.60,
+        CustomerType.AGRICULTURAL: 1.20,
+        CustomerType.PUBLIC_MUNICIPAL: 0.50,
+        CustomerType.INSTITUTIONAL: 0.80,
+        CustomerType.BULK: 0.40,
+    }
     
     # Seasonal factors (based on day of year)
     # Peak in summer (cooling) and winter (heating)
@@ -81,13 +139,8 @@ class LoadProfileGenerator:
         # Estimate daily consumption from profile (peak power × profile integral)
         daily_profile_integral = np.sum(baseline) / len(baseline)  # Average factor
         
-        # Assume peak load is baseline_peak_kw
-        if self.customer_type == CustomerType.RESIDENTIAL:
-            peak_kw = 8.0  # Typical residential peak
-        elif self.customer_type == CustomerType.COMMERCIAL:
-            peak_kw = 50.0  # Typical commercial peak
-        else:
-            peak_kw = 200.0  # Typical industrial peak
+        # Assume peak load by customer class.
+        peak_kw = self.DEFAULT_PEAK_KW_BY_TYPE[self.customer_type]
         
         # Daily consumption from profile
         estimated_daily_kwh = peak_kw * daily_profile_integral * 24
@@ -103,15 +156,21 @@ class LoadProfileGenerator:
             return self.COMMERCIAL_DAILY_PROFILE
         elif self.customer_type == CustomerType.INDUSTRIAL:
             return self.INDUSTRIAL_DAILY_PROFILE
+        elif self.customer_type == CustomerType.AGRICULTURAL:
+            return self.AGRICULTURAL_DAILY_PROFILE
+        elif self.customer_type == CustomerType.PUBLIC_MUNICIPAL:
+            return self.PUBLIC_MUNICIPAL_DAILY_PROFILE
+        elif self.customer_type == CustomerType.INSTITUTIONAL:
+            return self.INSTITUTIONAL_DAILY_PROFILE
+        elif self.customer_type == CustomerType.BULK:
+            return self.BULK_DAILY_PROFILE
         else:
-            # Agricultural - similar to industrial
             return self.INDUSTRIAL_DAILY_PROFILE
 
     def _get_dow_factor(self, day_of_year: int) -> float:
         """Get day-of-week factor (Monday=0, Sunday=6)."""
-        # Jan 1, 2024 was a Monday
         dow = (day_of_year - 1) % 7
-        return self.DOW_FACTORS[dow]
+        return self.DOW_FACTORS_BY_TYPE[self.customer_type][dow]
 
     def _get_seasonal_factor(self, day_of_year: int) -> float:
         """Get seasonal factor (peaks in winter and summer)."""
@@ -126,7 +185,9 @@ class LoadProfileGenerator:
         winter_component = 0.5 * (1 + np.cos(winter_phase))  # Peak at day 15
         summer_component = 0.5 * (1 + np.cos(summer_phase))  # Peak at day 200
         
-        seasonal = 0.7 + 0.3 * (winter_component + summer_component) / 2
+        base = 0.7 + 0.3 * (winter_component + summer_component) / 2
+        scale = self.SEASONAL_SCALE_BY_TYPE[self.customer_type]
+        seasonal = 1.0 + scale * (base - 1.0)
         return seasonal
 
     def get_hourly_profile(self, day_of_year: int) -> np.ndarray:
@@ -187,12 +248,7 @@ class LoadProfileGenerator:
             Power in kW
         """
         if peak_power_kw is None:
-            if self.customer_type == CustomerType.RESIDENTIAL:
-                peak_power_kw = 8.0
-            elif self.customer_type == CustomerType.COMMERCIAL:
-                peak_power_kw = 50.0
-            else:
-                peak_power_kw = 200.0
+            peak_power_kw = self.DEFAULT_PEAK_KW_BY_TYPE[self.customer_type]
         
         # Get hourly profile
         hourly_profile = self.get_hourly_profile(day_of_year)

@@ -61,13 +61,13 @@ def example_ieee13_simulation():
     # Add representative loads from IEEE 13 feeder.
     # Use actual OpenDSS load element names (not raw bus IDs).
     ieee13_loads = [
-        ('634a', CustomerType.RESIDENTIAL, 3500),   # Light load (residential)
-        ('634b', CustomerType.RESIDENTIAL, 3200),   # Light load (residential)
+        ('634a', CustomerType.RESIDENTIAL, 3500),   # Residential
+        ('634b', CustomerType.INSTITUTIONAL, 8000), # Institutional
         ('645', CustomerType.COMMERCIAL, 12000),    # Medium load (commercial)
-        ('646', CustomerType.COMMERCIAL, 8000),     # Medium load
-        ('652', CustomerType.RESIDENTIAL, 4000),    # Light load
+        ('646', CustomerType.PUBLIC_MUNICIPAL, 9000), # Public/municipal
+        ('652', CustomerType.AGRICULTURAL, 14000),  # Agricultural
         ('671', CustomerType.INDUSTRIAL, 35000),    # Heavy load (industrial)
-        ('670a', CustomerType.RESIDENTIAL, 5000),   # Light load
+        ('670a', CustomerType.BULK, 45000),         # Bulk customer
     ]
     load_manager.add_load_nodes_bulk(ieee13_loads)
     
@@ -164,40 +164,44 @@ def example_with_realistic_profiles():
     
     print("\n[Step 1] Generating load profiles for different customer types...")
     
-    # Residential profile
-    residential = LoadProfileGenerator(CustomerType.RESIDENTIAL, annual_consumption_kwh=4000)
-    res_day1 = residential.get_hourly_profile(day_of_year=1)
-    res_day180 = residential.get_hourly_profile(day_of_year=180)  # Summer
-    
-    # Commercial profile
-    commercial = LoadProfileGenerator(CustomerType.COMMERCIAL, annual_consumption_kwh=50000)
-    com_day1 = commercial.get_hourly_profile(day_of_year=1)
-    com_day180 = commercial.get_hourly_profile(day_of_year=180)
-    
-    # Industrial profile
-    industrial = LoadProfileGenerator(CustomerType.INDUSTRIAL, annual_consumption_kwh=200000)
-    ind_day1 = industrial.get_hourly_profile(day_of_year=1)
-    ind_day180 = industrial.get_hourly_profile(day_of_year=180)
-    
+    profile_specs = [
+        (CustomerType.RESIDENTIAL, 4000),
+        (CustomerType.COMMERCIAL, 50000),
+        (CustomerType.INDUSTRIAL, 200000),
+        (CustomerType.AGRICULTURAL, 70000),
+        (CustomerType.PUBLIC_MUNICIPAL, 60000),
+        (CustomerType.INSTITUTIONAL, 90000),
+        (CustomerType.BULK, 450000),
+    ]
+
+    profile_results = {}
+    for customer_type, annual_kwh in profile_specs:
+        generator = LoadProfileGenerator(customer_type, annual_consumption_kwh=annual_kwh)
+        day1 = generator.get_hourly_profile(day_of_year=1)
+        day180 = generator.get_hourly_profile(day_of_year=180)
+        profile_results[customer_type.value] = {
+            'day1': day1,
+            'day180': day180,
+        }
+
     print("\n[Step 2] Profile Summary:")
-    print(f"  Residential   - Day 1 avg load: {res_day1.mean():.2f}pu, "
-          f"Day 180 avg: {res_day180.mean():.2f}pu (seasonal variation)")
-    print(f"  Commercial    - Day 1 avg load: {com_day1.mean():.2f}pu, "
-          f"Day 180 avg: {com_day180.mean():.2f}pu (seasonal variation)")
-    print(f"  Industrial    - Day 1 avg load: {ind_day1.mean():.2f}pu, "
-          f"Day 180 avg: {ind_day180.mean():.2f}pu (flat consumption)")
+    for customer_type, _ in profile_specs:
+        values = profile_results[customer_type.value]
+        print(
+            f"  {customer_type.value:<16} - Day 1 avg load: {values['day1'].mean():.2f}pu, "
+            f"Day 180 avg: {values['day180'].mean():.2f}pu"
+        )
     
     # Export profiles to CSV
     hours = np.arange(24)
-    profiles_df = pd.DataFrame({
-        'Hour': hours,
-        'Residential_Winter': res_day1,
-        'Residential_Summer': res_day180,
-        'Commercial_Winter': com_day1,
-        'Commercial_Summer': com_day180,
-        'Industrial_Winter': ind_day1,
-        'Industrial_Summer': ind_day180,
-    })
+    profiles_data = {'Hour': hours}
+    for customer_type, _ in profile_specs:
+        values = profile_results[customer_type.value]
+        column_prefix = customer_type.value.replace("_", " ").title().replace(" ", "_")
+        profiles_data[f'{column_prefix}_Winter'] = values['day1']
+        profiles_data[f'{column_prefix}_Summer'] = values['day180']
+
+    profiles_df = pd.DataFrame(profiles_data)
     
     Path("results").mkdir(exist_ok=True)
     profiles_df.to_csv("results/load_profiles.csv", index=False)
