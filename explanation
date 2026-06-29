@@ -3,18 +3,20 @@ SIMPLE EXPLANATION OF THIS PROJECT
 
 What is this project?
 ---------------------
-This project is a "virtual copy" of a small electricity network.
-A virtual copy is called a digital twin.
+This project is a virtual copy of a small electricity network.
+That virtual copy is called a digital twin.
 
-Think of it like a flight simulator, but for electricity:
-- We create a fake power grid in software.
-- We run it over time.
-- We watch what happens.
-- We test normal behavior and suspicious behavior.
+Think of it like a flight simulator, but for electricity.
+It lets you:
+- build a power grid in software
+- run it step by step over time
+- see how customers use electricity
+- test normal behavior and suspicious behavior
+- view the results in charts and a dashboard
 
 
-What is a power grid (in simple words)?
----------------------------------------
+What is a power grid?
+---------------------
 A power grid is the system that sends electricity from where it is made to where it is used.
 
 Very simple path:
@@ -28,7 +30,7 @@ What does this simulation do right now?
 The current simulation does these main things:
 
 1. Builds a test electricity network
-- It uses standard IEEE test feeder models (especially IEEE 13-bus).
+- It uses standard IEEE test feeder models, especially IEEE 13-bus.
 - This is like using a known map for experiments.
 
 2. Creates different customer types
@@ -60,27 +62,33 @@ It can inject suspicious events, for example:
 This helps test if suspicious behavior can be seen in the data.
 
 5. Runs power-flow calculations over time
-- The model steps through many time points (for example every 15 minutes).
+- The model steps through many time points, for example every 15 minutes.
 - At each step it calculates loads, metered values, and losses.
 
 6. Saves results to files
 - Main run outputs are saved in results/main_ieee.
-- Files include simulation results, NTL events, and statistics.
+- Files include simulation results, NTL events, statistics, and a dashboard image.
 
 7. Shows a dashboard
 - The dashboard draws charts and a network map.
 - It shows substation -> feeders -> customers.
 - Suspicious customers are marked in red.
-- Customer type labels are shown (residential, commercial, etc.).
+- Customer type labels are shown, such as residential, commercial, industrial, and agricultural.
+
+8. Keeps future real data separate
+- The project now has a safe optional data layer for future SCADA, AMI, and GIS files.
+- If those files do not exist yet, the simulation still works with synthetic data.
+- This means you can add real datasets later without rewriting the core simulation.
 
 
-What does the code do (high-level)?
------------------------------------
+What does the code do?
+----------------------
 You can imagine the code as a team where each part has a job:
 
 1. Runner (main.py)
-- Starts the simulation.
-- Places output files in the main results folder.
+- Starts the full simulation by default.
+- Saves results in results/main_ieee.
+- Opens the dashboard after the run.
 
 2. Example runner (example_simulation.py)
 - Contains demo scenarios.
@@ -107,6 +115,11 @@ You can imagine the code as a team where each part has a job:
 - Reads result files.
 - Draws charts and suspicious-map visuals for easy understanding.
 
+9. Data source adapters
+- Keep SCADA, AMI, and GIS inputs separate from the simulation core.
+- Load real data only if it exists.
+- Fall back to synthetic data if it is not available yet.
+
 
 What is this useful for?
 ------------------------
@@ -121,8 +134,9 @@ How close is it to real life right now?
 ---------------------------------------
 It is realistic for research and learning, but still not full real-world utility level yet.
 Why?
-- It currently uses benchmark/simulated data.
+- It currently uses benchmark and simulated data.
 - Real utility datasets are planned for later.
+- The code is prepared for future SCADA, AMI, and GIS inputs, but it is not yet using them.
 
 When real data is added and calibrated in future, realism can increase a lot.
 

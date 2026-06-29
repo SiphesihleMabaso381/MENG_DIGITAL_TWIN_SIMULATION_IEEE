@@ -117,14 +117,30 @@ MENG_DIGITAL_TWIN_SIMULATION_IEEE/
 │   └── simulation_engine.py         # Main orchestrator (400+ lines)
 ├── ieee_feeders/                    # IEEE .dss feeder files (download from OpenDSS)
 ├── config/                          # Configuration files (YAML/JSON)
-├── data/                            # Generated datasets
+├── data/                            # Generated datasets and optional utility inputs
+│   └── inputs/                      # SCADA / AMI / GIS drop-in folder
+│       ├── scada/                   # Optional SCADA CSV files
+│       ├── ami/                     # Optional AMI CSV files
+│       └── gis/                     # Optional GIS CSV files
 ├── results/                         # Simulation outputs
 ├── notebooks/                       # Jupyter analysis notebooks
 ├── docs/                            # Documentation
+├── src/data_sources.py              # Optional utility-data loader/adapters
 ├── example_simulation.py            # Executable examples
 ├── requirements.txt                 # Python dependencies
 └── README.md                        # This file
 ```
+
+### Optional Utility Data Layer
+
+Real-world SCADA, AMI, and GIS datasets can be added later without changing the simulation core.
+The code now expects optional files in:
+
+- `data/inputs/scada/scada.csv`
+- `data/inputs/ami/ami.csv`
+- `data/inputs/gis/gis.csv`
+
+If those files are absent, the simulator continues using the current synthetic/benchmark data.
 
 ---
 
