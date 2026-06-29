@@ -1,0 +1,116 @@
+MENG DIGITAL TWIN - CLONE AND RUN ON ANY PC
+============================================
+
+Purpose
+-------
+Use this checklist every time you open the project on a different PC so setup, execution, and Git syncing are consistent.
+
+Prerequisites (install once per PC)
+-----------------------------------
+1. Git for Windows
+2. Python 3.11+ (recommended)
+3. VS Code (recommended)
+4. Internet access for pip installs
+
+Project Clone
+-------------
+1. Open PowerShell.
+2. Go to where you want the project folder:
+   cd "C:\Users\<YourUser>\Desktop"
+3. Clone:
+   git clone https://github.com/SiphesihleMabaso381/MENG_DIGITAL_TWIN_SIMULATION_IEEE.git
+4. Enter project folder:
+   cd MENG_DIGITAL_TWIN_SIMULATION_IEEE
+
+Create Environment and Install Dependencies
+------------------------------------------
+Option A (recommended if setup.ps1 is available)
+1. Run:
+   powershell -ExecutionPolicy Bypass -File .\setup.ps1
+
+Option B (manual)
+1. Create venv:
+   python -m venv .venv
+2. Activate venv:
+   .\.venv\Scripts\Activate.ps1
+3. Upgrade pip:
+   python -m pip install --upgrade pip
+4. Install requirements:
+   pip install -r requirements.txt
+
+IEEE Feeder Data Requirement
+----------------------------
+The full IEEE13 run needs feeder files in the expected path under ieee_feeders.
+If missing, download and extract IEEE test feeders so this path exists:
+- ieee_feeders/.../IEEE13Nodeckt.dss
+
+Quick Health Checks
+-------------------
+1. Run demo:
+   .\.venv\Scripts\python.exe main.py
+2. Run full IEEE13:
+   .\.venv\Scripts\python.exe main.py --full-ieee13
+3. Generate dashboard:
+   .\.venv\Scripts\python.exe src\dashboard.py --results-dir results/main_ieee --save results/main_ieee/dashboard.png --no-show
+
+Where Outputs Go
+----------------
+1. main.py outputs:
+   results/main_ieee/
+2. example_simulation.py outputs:
+   results/load_profiles.csv (when run directly)
+
+Git Workflow (ALWAYS for local + remote sync)
+----------------------------------------------
+Do these steps every time you make edits and want them saved both locally and on GitHub.
+
+1. Confirm branch and changed files:
+   git status -sb
+
+2. Pull latest remote changes before committing:
+   git pull origin main
+
+3. Stage files:
+   git add -A
+
+4. Commit locally (this is local save):
+   git commit -m "Describe what changed"
+
+5. Push to GitHub remote (this is remote save):
+   git push origin main
+
+6. Verify synced:
+   git status -sb
+   Expected: no pending changes and main aligned with origin/main.
+
+If git is not found on PATH
+---------------------------
+Use explicit Git path:
+"C:\Program Files\Git\cmd\git.exe"
+
+Example:
+& "C:\Program Files\Git\cmd\git.exe" status -sb
+
+Daily Safe Routine
+------------------
+1. Open project folder.
+2. Activate venv.
+3. Pull latest: git pull origin main
+4. Make edits.
+5. Run project checks.
+6. Commit + push.
+7. Confirm sync with git status -sb.
+
+Conflict Handling
+-----------------
+If push is rejected:
+1. git pull origin main
+2. Resolve conflicts in files.
+3. git add -A
+4. git commit -m "Resolve merge conflicts"
+5. git push origin main
+
+Reproducibility Note
+--------------------
+Simulation uses fixed seed in config for reproducible behavior.
+You may still see tiny floating-point differences across hardware/OS, but trends and outcomes should match.
