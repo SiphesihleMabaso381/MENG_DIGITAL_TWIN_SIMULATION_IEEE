@@ -8,11 +8,12 @@ A comprehensive, high-fidelity digital twin simulator for hybrid power distribut
 - ✅ OpenDSS integration for physics-based power flow analysis
 - ✅ IEEE 13/34/123 bus test feeders support
 - ✅ Hybrid smart + legacy metering system simulation
-- ✅ Realistic load profiles (residential/commercial/industrial)
+- ✅ Realistic load profiles (residential/commercial/industrial/agricultural/public/institutional/bulk)
 - ✅ 6 NTL scenario types with temporal scheduling
 - ✅ Quasi-static time-series (QSTS) simulation
-- ✅ 95%-100% real-world grid fidelity
 - ✅ Data export for federated learning pipelines
+- ✅ Automatic dashboard generation and saved dashboard image
+- ✅ Optional SCADA / AMI / GIS data layer for future real datasets
 
 ---
 
@@ -89,18 +90,24 @@ print(dss.run_command("New Circuit.test"))
 ### Run Example Simulations
 
 ```bash
-python example_simulation.py
+python main.py
 ```
 
-This demonstrates:
-1. Load profile generation with real-world patterns
-2. NTL scenario types and features
-3. Full IEEE 13-bus simulation (if .dss files available)
+This runs the full IEEE 13-bus simulation by default, then opens the dashboard and saves it to `results/main_ieee/dashboard.png`.
+
+If you want the lightweight demo flow, run:
+
+```bash
+python main.py --demo
+```
+
+The demo still generates the load profile and NTL example outputs.
 
 ### Output
-- Results exported to: `results/` directory
-- CSV files with measurements and statistics
-- Configuration logs
+- Full-run outputs are exported to: `results/main_ieee/`
+- CSV files with measurements, NTL events, and statistics
+- Dashboard image saved as `results/main_ieee/dashboard.png`
+- Demo load profile output remains in `results/load_profiles.csv`
 
 ---
 
@@ -126,7 +133,9 @@ MENG_DIGITAL_TWIN_SIMULATION_IEEE/
 ├── notebooks/                       # Jupyter analysis notebooks
 ├── docs/                            # Documentation
 ├── src/data_sources.py              # Optional utility-data loader/adapters
+├── src/dashboard.py                 # Dashboard visualizer
 ├── example_simulation.py            # Executable examples
+├── main.py                          # Default entrypoint for full simulation + dashboard
 ├── requirements.txt                 # Python dependencies
 └── README.md                        # This file
 ```
@@ -141,6 +150,7 @@ The code now expects optional files in:
 - `data/inputs/gis/gis.csv`
 
 If those files are absent, the simulator continues using the current synthetic/benchmark data.
+The core simulation does not depend on these files being present.
 
 ---
 
@@ -227,7 +237,7 @@ metering.inject_ntl_at_meter('node1', 'meter_tampering', 0.3)
 Generates realistic consumption patterns with temporal and seasonal variations.
 
 **Key features:**
-- 3 customer types: Residential, Commercial, Industrial
+- 7 customer types: Residential, Commercial, Industrial, Agricultural, Public/Municipal, Institutional, Bulk
 - Hourly and 15-minute resolution
 - Day-of-week factors (weekday vs. weekend)
 - Seasonal variations (summer/winter peaks)
@@ -343,6 +353,8 @@ digital_twin.export_results("results/simulation_output")
 digital_twin.print_summary()
 ```
 
+The launcher in `main.py` now runs the full IEEE13 flow by default, then exports the dashboard image into `results/main_ieee/`.
+
 ---
 
 ## Data Output Format
@@ -381,43 +393,28 @@ node2,legacy,1280.5,53.1,80.5,0.0,0,...
 
 ## Real-World Fidelity Checklist
 
-- ✅ **Network Physics** (95% fidelity)
+- ✅ **Network Physics**
   - Kirchhoff's laws enforced by OpenDSS
   - Unbalanced 3-phase networks
-  - Temperature-corrected line impedances
-  - Transformer tap changer dynamics
+  - Transformer and feeder behavior in the test systems
 
-- ✅ **Load Profiles** (90% fidelity with OpenEI)
-  - Real-world consumption patterns
+- ✅ **Load Profiles**
+  - Residential, commercial, industrial, agricultural, public, institutional, and bulk customers
   - Seasonal and day-of-week variations
   - Stochastic variability
-  - Customer type differentiation
 
-- ✅ **Smart Meters** (90% fidelity)
-  - 15-minute interval data
-  - IEC 62053 Class 0.5 accuracy
-  - Voltage/current sensors
-  - Communication reliability
-  - Tamper detection flags
+- ✅ **Smart and Legacy Meters**
+  - Interval-style readings and meter-specific errors
+  - Communication loss and tamper flags
+  - Mixed smart/legacy deployment
 
-- ✅ **Legacy Meters** (85% fidelity)
-  - Monthly or bi-monthly readings
-  - IEC 62052 Class 2.0 accuracy
-  - Manual read transcription errors
-  - Mechanical meter drift
-  - No advanced sensors
+- ✅ **NTL Scenarios**
+  - Meter bypass, tampering, illegal connection, load manipulation, and meter freezing
+  - Temporal scheduling of suspicious events
 
-- ✅ **NTL Scenarios** (85% fidelity)
-  - Realistic theft types
-  - Temporal scheduling patterns
-  - Adaptive evasion behaviors
-  - Coordinated theft at adjacent nodes
-
-- ✅ **Regulatory Context** (80% fidelity)
-  - Load shedding schedules (stage-based)
-  - Prepaid meter behavior
-  - Informal settlement topology
-  - South African grid specifics
+- ✅ **Future Utility Data Layer**
+  - SCADA, AMI, and GIS inputs can be added later
+  - Core simulation keeps working without them
 
 ---
 
