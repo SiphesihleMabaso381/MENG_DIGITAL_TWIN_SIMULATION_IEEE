@@ -244,6 +244,23 @@ class OpenDSSInterface:
             logger.error(f"Error getting load power for {load_name}: {str(e)}")
             return {'p_kw': 0, 'q_kvar': 0}
 
+    def get_total_circuit_power(self) -> Dict[str, float]:
+        """
+        Get total source power delivered to the circuit.
+
+        Returns:
+            Dict with keys: 'p_kw', 'q_kvar'
+        """
+        try:
+            total_power = dss.Circuit.TotalPower()
+            # OpenDSS often returns negative sign for load consumption at source.
+            p_kw = abs(float(total_power[0])) if len(total_power) > 0 else 0.0
+            q_kvar = abs(float(total_power[1])) if len(total_power) > 1 else 0.0
+            return {'p_kw': p_kw, 'q_kvar': q_kvar}
+        except Exception as e:
+            logger.error(f"Error getting total circuit power: {str(e)}")
+            return {'p_kw': 0.0, 'q_kvar': 0.0}
+
     def set_load_power(self, load_name: str, p_kw: float, q_kvar: float = 0):
         """
         Set load power (P and Q) directly.

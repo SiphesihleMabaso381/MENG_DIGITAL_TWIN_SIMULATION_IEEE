@@ -35,22 +35,38 @@ class MeterCharacteristics:
     has_current_sensor: bool
     has_harmonics: bool
     communication_reliability: float  # Packet arrival rate (0-1)
+    communication_recovery_rate: float  # Share of dropped packets later recovered/reconstructed
+    communication_burst_probability: float  # Probability of entering burst outage
+    communication_burst_steps_min: int  # Minimum burst duration in timesteps
+    communication_burst_steps_max: int  # Maximum burst duration in timesteps
     tamper_flag_support: bool  # Can detect meter tampering
     clock_drift_ppm: float  # Clock drift in parts per million
     
     
 class SmartMeterCharacteristics(MeterCharacteristics):
     """Smart meter (AMI) characteristics."""
-    def __init__(self):
+    def __init__(
+        self,
+        accuracy_class: float = 0.5,
+        communication_reliability: float = 0.95,
+        communication_recovery_rate: float = 0.0,
+        communication_burst_probability: float = 0.01,
+        communication_burst_steps_min: int = 2,
+        communication_burst_steps_max: int = 8,
+    ):
         super().__init__(
             meter_type=MeterType.SMART_METER,
-            accuracy_class=0.5,  # Typical class 0.5
+            accuracy_class=accuracy_class,
             sampling_interval_minutes=1,  # 1-min internal sampling
             reporting_interval_minutes=15,  # 15-min billing interval
             has_voltage_sensor=True,
             has_current_sensor=True,
             has_harmonics=True,
-            communication_reliability=0.95,  # 95% packets arrive
+            communication_reliability=communication_reliability,
+            communication_recovery_rate=communication_recovery_rate,
+            communication_burst_probability=communication_burst_probability,
+            communication_burst_steps_min=max(int(communication_burst_steps_min), 1),
+            communication_burst_steps_max=max(int(communication_burst_steps_max), 1),
             tamper_flag_support=True,
             clock_drift_ppm=10,  # ±10 ppm typical
         )
@@ -58,16 +74,28 @@ class SmartMeterCharacteristics(MeterCharacteristics):
 
 class LegacyMeterCharacteristics(MeterCharacteristics):
     """Legacy electromechanical meter characteristics."""
-    def __init__(self):
+    def __init__(
+        self,
+        accuracy_class: float = 2.0,
+        communication_reliability: float = 1.0,
+        communication_recovery_rate: float = 0.0,
+        communication_burst_probability: float = 0.0,
+        communication_burst_steps_min: int = 1,
+        communication_burst_steps_max: int = 1,
+    ):
         super().__init__(
             meter_type=MeterType.LEGACY_METER,
-            accuracy_class=2.0,  # Class 2.0 per IEC 62052
+            accuracy_class=accuracy_class,
             sampling_interval_minutes=60,  # 1-hour mechanical sampling
             reporting_interval_minutes=60*24*30,  # Monthly manual reading
             has_voltage_sensor=False,
             has_current_sensor=False,
             has_harmonics=False,
-            communication_reliability=1.0,  # Perfect (manual read)
+            communication_reliability=communication_reliability,
+            communication_recovery_rate=communication_recovery_rate,
+            communication_burst_probability=communication_burst_probability,
+            communication_burst_steps_min=max(int(communication_burst_steps_min), 1),
+            communication_burst_steps_max=max(int(communication_burst_steps_max), 1),
             tamper_flag_support=False,  # No tamper detection
             clock_drift_ppm=100,  # ±100 ppm (mechanical drift)
         )
@@ -103,6 +131,7 @@ class Meter:
         self.tamper_detected = False
         self.clock_offset_seconds = 0
         self.measurement_error_factor = 1.0  # Multiplicative error
+        self.communication_outage_remaining_steps = 0
         
         # Initialize random meter-specific error
         self._init_measurement_error()
@@ -150,8 +179,22 @@ class Meter:
         self.cumulative_energy_kwh += energy_kwh
         self.cumulative_reactive_kvarh += reactive_kvarh
         
-        # Communication loss (measurement not recorded)
-        communication_loss = np.random.random() > self.characteristics.communication_reliability
+        # Communication loss with realistic burst-outage behavior.
+        if self.communication_outage_remaining_steps > 0:
+            communication_loss = True
+            self.communication_outage_remaining_steps -= 1
+        else:
+            # Trigger outage burst first.
+            if np.random.random() < self.characteristics.communication_burst_probability:
+                low = self.characteristics.communication_burst_steps_min
+                high = self.characteristics.communication_burst_steps_max
+                if high < low:
+                    high = low
+                self.communication_outage_remaining_steps = int(np.random.randint(low, high + 1))
+                communication_loss = True
+                self.communication_outage_remaining_steps -= 1
+            else:
+                communication_loss = np.random.random() > self.characteristics.communication_reliability
         
         # Clock offset affects timestamp
         timestamp_offset_sec = self.clock_offset_seconds
@@ -161,18 +204,40 @@ class Meter:
         if self.characteristics.tamper_flag_support and self.tamper_detected:
             tamper_flag = True
         
+        communication_recovered = False
+        measured_p_out = measured_p_kw
+        measured_q_out = measured_q_kvar
+        energy_out = energy_kwh
+        reactive_out = reactive_kvarh
+
+        if communication_loss:
+            if np.random.random() < self.characteristics.communication_recovery_rate:
+                # Backfill missing reads with a realistic reconstruction error.
+                recovery_factor = np.random.normal(1.0, 0.01)
+                measured_p_out = measured_p_kw * recovery_factor
+                measured_q_out = measured_q_kvar * recovery_factor
+                energy_out = measured_p_out * time_hours
+                reactive_out = measured_q_out * time_hours
+                communication_recovered = True
+            else:
+                measured_p_out = 0.0
+                measured_q_out = 0.0
+                energy_out = 0.0
+                reactive_out = 0.0
+
         return {
             'meter_id': self.meter_id,
             'node_name': self.node_name,
             'actual_p_kw': p_kw,
             'actual_q_kvar': q_kvar,
-            'measured_p_kw': measured_p_kw if not communication_loss else 0,
-            'measured_q_kvar': measured_q_kvar if not communication_loss else 0,
-            'energy_kwh': energy_kwh if not communication_loss else 0,
-            'reactive_kvarh': reactive_kvarh if not communication_loss else 0,
+            'measured_p_kw': measured_p_out,
+            'measured_q_kvar': measured_q_out,
+            'energy_kwh': energy_out,
+            'reactive_kvarh': reactive_out,
             'cumulative_kwh': self.cumulative_energy_kwh,
             'meter_type': self.characteristics.meter_type.value,
             'communication_loss': communication_loss,
+            'communication_recovered': communication_recovered,
             'timestamp_offset_sec': timestamp_offset_sec,
             'tamper_flag': tamper_flag,
             'measurement_error_factor': self.measurement_error_factor,
@@ -224,8 +289,12 @@ class HybridMeteringSystem:
         
         logger.info(f"Initialized hybrid metering system for {len(nodes)} nodes")
         
-    def deploy_meters(self, smart_meter_nodes: List[str], 
-                     legacy_meter_nodes: Optional[List[str]] = None):
+    def deploy_meters(
+        self,
+        smart_meter_nodes: List[str],
+        legacy_meter_nodes: Optional[List[str]] = None,
+        meter_profile: Optional[Dict[str, float]] = None,
+    ):
         """
         Deploy meters to specific nodes.
 
@@ -236,10 +305,35 @@ class HybridMeteringSystem:
         if legacy_meter_nodes is None:
             legacy_meter_nodes = [n for n in self.nodes if n not in smart_meter_nodes]
         
+        meter_profile = meter_profile or {}
+
+        smart_accuracy = float(meter_profile.get('smart_accuracy_class', 0.5))
+        legacy_accuracy = float(meter_profile.get('legacy_accuracy_class', 2.0))
+        smart_comm_mean = float(meter_profile.get('smart_communication_reliability', 0.95))
+        smart_comm_std = float(meter_profile.get('smart_communication_reliability_std', 0.01))
+        smart_comm_recovery = float(meter_profile.get('smart_communication_recovery_rate', 0.0))
+        legacy_comm = float(meter_profile.get('legacy_communication_reliability', 1.0))
+        legacy_comm_recovery = float(meter_profile.get('legacy_communication_recovery_rate', 0.0))
+        smart_burst_prob = float(meter_profile.get('smart_burst_probability', 0.01))
+        smart_burst_min = int(meter_profile.get('smart_burst_steps_min', 2))
+        smart_burst_max = int(meter_profile.get('smart_burst_steps_max', 8))
+
         # Deploy smart meters
         for i, node in enumerate(smart_meter_nodes):
             meter_id = f"SM_{node}"
-            smart_chars = SmartMeterCharacteristics()
+            per_meter_reliability = float(np.clip(
+                np.random.normal(smart_comm_mean, smart_comm_std),
+                0.70,
+                0.999,
+            ))
+            smart_chars = SmartMeterCharacteristics(
+                accuracy_class=smart_accuracy,
+                communication_reliability=per_meter_reliability,
+                communication_recovery_rate=float(np.clip(smart_comm_recovery, 0.0, 1.0)),
+                communication_burst_probability=max(0.0, smart_burst_prob),
+                communication_burst_steps_min=max(1, smart_burst_min),
+                communication_burst_steps_max=max(1, smart_burst_max),
+            )
             meter = Meter(meter_id, node, smart_chars, node_type="residential")
             self.meters[meter_id] = meter
             self.meter_placement[node] = meter_id
@@ -247,14 +341,22 @@ class HybridMeteringSystem:
         # Deploy legacy meters
         for i, node in enumerate(legacy_meter_nodes):
             meter_id = f"LM_{node}"
-            legacy_chars = LegacyMeterCharacteristics()
+            legacy_chars = LegacyMeterCharacteristics(
+                accuracy_class=legacy_accuracy,
+                communication_reliability=float(np.clip(legacy_comm, 0.80, 1.0)),
+                communication_recovery_rate=float(np.clip(legacy_comm_recovery, 0.0, 1.0)),
+            )
             meter = Meter(meter_id, node, legacy_chars, node_type="residential")
             self.meters[meter_id] = meter
             self.meter_placement[node] = meter_id
         
         logger.info(f"Deployed {len(smart_meter_nodes)} smart meters and {len(legacy_meter_nodes)} legacy meters")
         
-    def deploy_meters_by_penetration(self, smart_meter_fraction: float = 0.5):
+    def deploy_meters_by_penetration(
+        self,
+        smart_meter_fraction: float = 0.5,
+        meter_profile: Optional[Dict[str, float]] = None,
+    ):
         """
         Deploy meters based on smart meter penetration rate.
 
@@ -265,7 +367,7 @@ class HybridMeteringSystem:
         smart_nodes = np.random.choice(self.nodes, num_smart, replace=False).tolist()
         legacy_nodes = [n for n in self.nodes if n not in smart_nodes]
         
-        self.deploy_meters(smart_nodes, legacy_nodes)
+        self.deploy_meters(smart_nodes, legacy_nodes, meter_profile=meter_profile)
         logger.info(f"Smart meter penetration: {len(smart_nodes)}/{len(self.nodes)} "
                    f"({smart_meter_fraction*100:.1f}%)")
 

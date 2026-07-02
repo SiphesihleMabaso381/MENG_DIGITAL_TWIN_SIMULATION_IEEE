@@ -228,9 +228,9 @@ class NTLInjectionEngine:
                 elif event.ntl_type == NTLType.METER_TAMPERING:
                     metered_power = self._apply_meter_tampering(node_name, actual_power, intensity)
                 elif event.ntl_type == NTLType.ILLEGAL_CONNECTION:
-                    # For illegal connection, increase actual load
+                    # Illegal connection increases physical demand, but meter reads only legitimate load.
                     actual_power = (actual_p * (1 + intensity), actual_q * (1 + intensity))
-                    metered_power = actual_power  # Meter sees the legitimate portion only
+                    metered_power = (actual_p, actual_q)
                 elif event.ntl_type == NTLType.LOAD_MANIPULATION:
                     metered_power = self._apply_load_manipulation(node_name, actual_power, intensity)
                 elif event.ntl_type == NTLType.METER_FREEZING:
@@ -317,8 +317,13 @@ class NTLInjectionEngine:
             })
         return pd.DataFrame(data)
 
-    def generate_realistic_theft_scenarios(self, num_theft_nodes: int = 3,
-                                          sim_duration_days: int = 30) -> List[NTLEvent]:
+    def generate_realistic_theft_scenarios(
+        self,
+        num_theft_nodes: int = 3,
+        theft_nodes: Optional[List[str]] = None,
+        sim_duration_days: int = 30,
+        realism_profile: str = "utility",
+    ) -> List[NTLEvent]:
         """
         Generate realistic theft scenarios (stochastic, seasonal, adaptive patterns).
 
@@ -329,35 +334,81 @@ class NTLInjectionEngine:
         Returns:
             List of generated NTL events
         """
-        available_nodes = list(self.load_manager.node_profiles.keys())
-        theft_nodes = np.random.choice(available_nodes, min(num_theft_nodes, len(available_nodes)), 
-                                       replace=False).tolist()
+        available_nodes = sorted(list(self.load_manager.node_profiles.keys()))
+        if not available_nodes:
+            return []
+
+        if theft_nodes is None:
+            selected_nodes = np.random.choice(
+                available_nodes,
+                min(max(num_theft_nodes, 0), len(available_nodes)),
+                replace=False,
+            ).tolist()
+        else:
+            selected_nodes = [n for n in theft_nodes if n in set(available_nodes)]
         
         generated_events = []
         
-        for node in theft_nodes:
-            # Random theft type (partial bypass most common)
-            theft_type = np.random.choice([
-                NTLType.PARTIAL_METER_BYPASS,
-                NTLType.METER_TAMPERING,
-                NTLType.ILLEGAL_CONNECTION,
-            ], p=[0.4, 0.35, 0.25])
-            
-            # Realistic pattern: multiple shorter events, typically at night/peak times
-            num_events_per_node = np.random.randint(2, 5)
-            
+        profile_settings = {
+            "benchmark": {
+                "type_weights": [0.45, 0.35, 0.15, 0.05],
+                "events_per_node_low": 1,
+                "events_per_node_high": 3,
+                "intensity_low": 0.15,
+                "intensity_high": 0.45,
+                "duration_low": 1.0,
+                "duration_high": 6.0,
+            },
+            "utility": {
+                "type_weights": [0.35, 0.30, 0.20, 0.15],
+                "events_per_node_low": 2,
+                "events_per_node_high": 7,
+                "intensity_low": 0.20,
+                "intensity_high": 0.65,
+                "duration_low": 0.5,
+                "duration_high": 12.0,
+            },
+            "stressed": {
+                "type_weights": [0.25, 0.25, 0.30, 0.20],
+                "events_per_node_low": 2,
+                "events_per_node_high": 8,
+                "intensity_low": 0.20,
+                "intensity_high": 0.70,
+                "duration_low": 1.0,
+                "duration_high": 16.0,
+            },
+        }
+        cfg = profile_settings.get(realism_profile, profile_settings["utility"])
+
+        ntl_type_pool = [
+            NTLType.PARTIAL_METER_BYPASS,
+            NTLType.METER_TAMPERING,
+            NTLType.ILLEGAL_CONNECTION,
+            NTLType.METER_FREEZING,
+        ]
+
+        for node in selected_nodes:
+            num_events_per_node = int(
+                np.random.randint(cfg["events_per_node_low"], cfg["events_per_node_high"] + 1)
+            )
+
             for _ in range(num_events_per_node):
-                start_day = np.random.randint(1, sim_duration_days)
-                
-                # Theft more common at night or during peaks
-                if np.random.random() < 0.6:
-                    start_hour = np.random.uniform(20, 24)  # Night
+                theft_type = np.random.choice(ntl_type_pool, p=cfg["type_weights"])
+
+                start_day = int(np.random.randint(1, max(sim_duration_days, 1) + 1))
+
+                # Theft tends to cluster in evening/night, with some daytime activity.
+                hour_bucket = np.random.choice(["night", "evening", "day"], p=[0.40, 0.40, 0.20])
+                if hour_bucket == "night":
+                    start_hour = float(np.random.uniform(0, 6))
+                elif hour_bucket == "evening":
+                    start_hour = float(np.random.uniform(17, 24))
                 else:
-                    start_hour = np.random.uniform(18, 21)  # Peak
-                
-                duration = np.random.uniform(2, 8)  # 2-8 hours
-                intensity = np.random.uniform(0.2, 0.6)  # 20-60% theft
-                
+                    start_hour = float(np.random.uniform(8, 17))
+
+                duration = float(np.random.uniform(cfg["duration_low"], cfg["duration_high"]))
+                intensity = float(np.random.uniform(cfg["intensity_low"], cfg["intensity_high"]))
+
                 event = NTLEvent(
                     node_name=node,
                     ntl_type=theft_type,
@@ -365,11 +416,22 @@ class NTLInjectionEngine:
                     start_hour=start_hour,
                     duration_hours=duration,
                     intensity_fraction=intensity,
-                    description=f"Realistic {theft_type.value} at {node}"
+                    description=(
+                        f"{realism_profile} realistic {theft_type.value} at {node} "
+                        f"(day {start_day}, {start_hour:.2f}h)"
+                    ),
                 )
-                
+
                 generated_events.append(event)
-                self.schedule_ntl_event(**vars(event))
+                self.schedule_ntl_event(
+                    node_name=event.node_name,
+                    ntl_type=event.ntl_type,
+                    start_day=event.start_day,
+                    start_hour=event.start_hour,
+                    duration_hours=event.duration_hours,
+                    intensity=event.intensity_fraction,
+                    description=event.description,
+                )
         
         logger.info(f"Generated {len(generated_events)} realistic theft events")
         return generated_events

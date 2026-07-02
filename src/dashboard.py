@@ -57,21 +57,82 @@ def _prepare_timeseries(sim_df: pd.DataFrame) -> pd.DataFrame:
     df["expected_p_kw"] = df["expected_p_kw"].fillna(df["node_name"].map(node_baseline))
     df["expected_p_kw"] = df["expected_p_kw"].fillna(df["actual_p_kw"])
 
+    agg_map = {
+        "actual_total_kw": ("actual_p_kw", "sum"),
+        "measured_total_kw": ("measured_p_kw", "sum"),
+        "expected_total_kw": ("expected_p_kw", "sum"),
+        "ntl_total_kw": ("ntl_loss_kw", "sum"),
+        "comm_loss_pct": ("communication_loss", lambda s: float(np.mean(s)) * 100.0),
+        "convergence_ok": ("convergence", "mean"),
+    }
+
+    if "source_p_kw" in df.columns:
+        agg_map["source_total_kw"] = ("source_p_kw", "first")
+    if "metered_total_kw" in df.columns:
+        agg_map["metered_target_kw"] = ("metered_total_kw", "first")
+
     grouped = (
         df.groupby(["timestep", "sim_hour"], as_index=False)
-        .agg(
-            actual_total_kw=("actual_p_kw", "sum"),
-            measured_total_kw=("measured_p_kw", "sum"),
-            expected_total_kw=("expected_p_kw", "sum"),
-            ntl_total_kw=("ntl_loss_kw", "sum"),
-            comm_loss_pct=("communication_loss", lambda s: float(np.mean(s)) * 100.0),
-            convergence_ok=("convergence", "mean"),
-        )
+        .agg(**agg_map)
         .sort_values("timestep")
     )
 
     grouped["residual_kw"] = grouped["actual_total_kw"] - grouped["measured_total_kw"]
+
+    if {"source_total_kw", "metered_target_kw"}.issubset(grouped.columns):
+        grouped["technical_loss_kw_est"] = np.maximum(
+            grouped["source_total_kw"] - grouped["metered_target_kw"],
+            0.0,
+        )
+
     return grouped
+
+
+def _compute_energy_breakdown(sim_df: pd.DataFrame, ts_df: pd.DataFrame) -> Dict[str, float]:
+    if len(ts_df) >= 2:
+        step_hours = float(ts_df["sim_hour"].diff().dropna().median())
+    else:
+        step_hours = 0.25
+
+    supplied_kwh = float(ts_df["actual_total_kw"].sum() * step_hours)
+    metered_kwh = float(ts_df["measured_total_kw"].sum() * step_hours)
+    gap_kwh = supplied_kwh - metered_kwh
+    ntl_kwh = float(ts_df["ntl_total_kw"].sum() * step_hours)
+    non_ntl_kwh = gap_kwh - ntl_kwh
+
+    baseline_non_ntl_kw = sim_df["actual_p_kw"] - sim_df["ntl_loss_kw"]
+    measured_kw = sim_df["measured_p_kw"]
+    meas_factor = sim_df.get("measurement_error_factor", pd.Series(1.0, index=sim_df.index))
+    measured_no_comm_kw = baseline_non_ntl_kw * meas_factor
+
+    if "communication_loss" in sim_df.columns:
+        comm_mask = sim_df["communication_loss"].astype(bool)
+        measured_no_comm_kw = measured_no_comm_kw.where(comm_mask, measured_kw)
+    else:
+        comm_mask = pd.Series(False, index=sim_df.index)
+
+    comm_kwh = float(((measured_no_comm_kw - measured_kw).sum()) * step_hours)
+    meter_bias_series = baseline_non_ntl_kw - measured_no_comm_kw
+    meter_bias_kwh = float((meter_bias_series.sum()) * step_hours)
+    meter_bias_under_kwh = float((meter_bias_series.clip(lower=0.0).sum()) * step_hours)
+    meter_bias_over_kwh = float(((-meter_bias_series.clip(upper=0.0)).sum()) * step_hours)
+
+    technical_kwh = np.nan
+    if "technical_loss_kw_est" in ts_df.columns:
+        technical_kwh = float(ts_df["technical_loss_kw_est"].sum() * step_hours)
+
+    return {
+        "supplied_kwh": supplied_kwh,
+        "metered_kwh": metered_kwh,
+        "gap_kwh": gap_kwh,
+        "ntl_kwh": ntl_kwh,
+        "non_ntl_kwh": non_ntl_kwh,
+        "communication_kwh": comm_kwh,
+        "meter_bias_kwh": meter_bias_kwh,
+        "meter_bias_under_kwh": meter_bias_under_kwh,
+        "meter_bias_over_kwh": meter_bias_over_kwh,
+        "technical_kwh": technical_kwh,
+    }
 
 
 def _find_suspicious_nodes(sim_df: pd.DataFrame, events_df: pd.DataFrame, stats_df: pd.DataFrame) -> List[str]:
@@ -264,15 +325,32 @@ def _plot_expected_meter_stream(ax, baseline_df: pd.DataFrame, nodes: List[str])
         ax.axis("off")
         return
 
-    for node in nodes[:6]:
+    plotted_nodes = []
+    missing_nodes = []
+    for node in nodes:
         if node in baseline_df.columns:
             ax.plot(baseline_df["Hour"], baseline_df[node], label=f"Node {node} Expected", linestyle="--", linewidth=1.4)
+            plotted_nodes.append(node)
+        else:
+            missing_nodes.append(node)
 
     ax.set_xlabel("Simulation Hour")
     ax.set_ylabel("Expected Metered Load (kW)")
-    ax.set_title("Expected Meter Stream")
-    ax.legend(fontsize=7)
+    ax.set_title(f"Expected Meter Stream ({len(plotted_nodes)}/{len(nodes)} nodes)")
+    ax.legend(fontsize=6, ncol=2)
     ax.grid(alpha=0.25)
+
+    if missing_nodes:
+        ax.text(
+            0.01,
+            0.01,
+            f"Missing nodes: {', '.join(missing_nodes[:8])}" + (" ..." if len(missing_nodes) > 8 else ""),
+            transform=ax.transAxes,
+            fontsize=7,
+            va="bottom",
+            ha="left",
+            bbox=dict(boxstyle="round,pad=0.25", fc="#fff8e1", ec="#ef6c00", lw=0.8),
+        )
 
 
 def _plot_suspected_meter_stream(ax, fraud_df: pd.DataFrame, suspicious_nodes: List[str]):
@@ -318,7 +396,7 @@ def _plot_loss_behavior(ax, ts_df: pd.DataFrame):
     ax.grid(alpha=0.25)
 
 
-def _plot_summary_bars(ax, ts_df: pd.DataFrame):
+def _plot_summary_bars(ax, ts_df: pd.DataFrame, breakdown: Dict[str, float]):
     labels = ["Actual Import", "Expected Import", "Metered", "NTL Loss", "Residual"]
     values = [
         ts_df["actual_total_kw"].mean(),
@@ -337,6 +415,35 @@ def _plot_summary_bars(ax, ts_df: pd.DataFrame):
     ax.set_ylabel("Average Power (kW)")
     ax.set_title("Grid Snapshot Balance Matrix")
     ax.grid(axis="y", alpha=0.25)
+
+    technical_text = (
+        f"{breakdown['technical_kwh']:.1f} kWh"
+        if np.isfinite(breakdown["technical_kwh"])
+        else "N/A"
+    )
+    detail = (
+        f"Energy breakdown:\n"
+        f"Supplied: {breakdown['supplied_kwh']:.1f} kWh\n"
+        f"Metered: {breakdown['metered_kwh']:.1f} kWh\n"
+        f"Gap: {breakdown['gap_kwh']:.1f} kWh\n"
+        f"NTL: {breakdown['ntl_kwh']:.1f} kWh\n"
+        f"Non-NTL: {breakdown['non_ntl_kwh']:.1f} kWh\n"
+        f"Comm gap: {breakdown['communication_kwh']:.1f} kWh\n"
+        f"Meter bias (net): {breakdown['meter_bias_kwh']:.1f} kWh\n"
+        f"  under-reg: {breakdown['meter_bias_under_kwh']:.1f} kWh\n"
+        f"  over-reg: {breakdown['meter_bias_over_kwh']:.1f} kWh\n"
+        f"Tech loss est: {technical_text}"
+    )
+    ax.text(
+        0.02,
+        0.98,
+        detail,
+        transform=ax.transAxes,
+        fontsize=7,
+        va="top",
+        ha="left",
+        bbox=dict(boxstyle="round,pad=0.3", fc="#f5f5f5", ec="#9e9e9e", lw=0.8),
+    )
 
 
 def _plot_explanation_comparison(ax, fraud_df: pd.DataFrame, baseline_df: pd.DataFrame, suspicious_nodes: List[str], chosen_thefts: Dict[str, str]):
@@ -432,6 +539,7 @@ def render_dashboard(results_dir: str = "results/main_ieee", save_path: str | No
     sim_df, events_df, stats_df = _load_project_outputs(source)
 
     ts_df = _prepare_timeseries(sim_df)
+    breakdown = _compute_energy_breakdown(sim_df, ts_df)
     suspicious_nodes = _find_suspicious_nodes(sim_df, events_df, stats_df)
     chosen_thefts = _infer_theft_types(sim_df, events_df)
     customer_types = _infer_customer_types(sim_df)
@@ -461,7 +569,7 @@ def render_dashboard(results_dir: str = "results/main_ieee", save_path: str | No
     _plot_expected_meter_stream(ax_expected, baseline_df, node_order)
     _plot_suspected_meter_stream(ax_suspected, fraud_df, suspicious_nodes)
     _plot_loss_behavior(ax_loss, ts_df)
-    _plot_summary_bars(ax_summary, ts_df)
+    _plot_summary_bars(ax_summary, ts_df, breakdown)
     _plot_suspect_details(ax_details, sim_df, baseline_df, suspicious_nodes, chosen_thefts, customer_types)
     _plot_explanation_comparison(ax_explain, fraud_df, baseline_df, suspicious_nodes, chosen_thefts)
     _plot_transformer_vs_reported_pie(ax_pie, ts_df)

@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
+from typing import Dict, List, Tuple
 
 # Import simulation modules
 from src.opendsss_interface import OpenDSSInterface
@@ -20,135 +21,409 @@ from src.ntl_injection import NTLInjectionEngine, NTLType
 from src.simulation_engine import HybridGridDigitalTwin, SimulationConfig
 
 
-def example_ieee13_simulation():
+FEEDER_ENTRY_FILES = {
+    "IEEE13": (
+        "ieee_feeders/electricdss-code-r4166-trunk-Distrib-IEEETestCases-13Bus/"
+        "electricdss-code-r4166-trunk-Distrib-IEEETestCases-13Bus/IEEE13Nodeckt.dss"
+    ),
+    "IEEE34": (
+        "ieee_feeders/electricdss-code-r4166-trunk-Distrib-IEEETestCases-34Bus/"
+        "electricdss-code-r4166-trunk-Distrib-IEEETestCases-34Bus/Run_IEEE34Mod1.dss"
+    ),
+    "IEEE123": (
+        "ieee_feeders/electricdss-code-r4166-trunk-Distrib-IEEETestCases-123Bus/"
+        "electricdss-code-r4166-trunk-Distrib-IEEETestCases-123Bus/Run_IEEE123Bus.DSS"
+    ),
+}
+
+
+REALISM_METER_PROFILES = {
+    "benchmark": {
+        "smart_accuracy_class": 0.5,
+        "legacy_accuracy_class": 2.0,
+        "smart_communication_reliability": 0.95,
+        "smart_communication_reliability_std": 0.01,
+        "legacy_communication_reliability": 1.0,
+        "smart_burst_probability": 0.0,
+        "smart_burst_steps_min": 1,
+        "smart_burst_steps_max": 1,
+    },
+    "utility": {
+        "smart_accuracy_class": 0.5,
+        "legacy_accuracy_class": 1.5,
+        "smart_communication_reliability": 0.992,
+        "smart_communication_reliability_std": 0.004,
+        "smart_communication_recovery_rate": 0.85,
+        "legacy_communication_reliability": 1.0,
+        "legacy_communication_recovery_rate": 0.95,
+        "smart_burst_probability": 0.001,
+        "smart_burst_steps_min": 2,
+        "smart_burst_steps_max": 4,
+    },
+    "stressed": {
+        "smart_accuracy_class": 1.0,
+        "legacy_accuracy_class": 2.5,
+        "smart_communication_reliability": 0.93,
+        "smart_communication_reliability_std": 0.02,
+        "legacy_communication_reliability": 0.995,
+        "smart_burst_probability": 0.02,
+        "smart_burst_steps_min": 4,
+        "smart_burst_steps_max": 16,
+    },
+}
+
+
+REALISM_TARGETS = {
+    "benchmark": {
+        "non_ntl_gap_pct": (0.5, 3.0),
+        "ntl_pct": (0.5, 4.0),
+        "technical_pct": (3.0, 10.0),
+        "comm_loss_rate_pct": (0.0, 4.0),
+    },
+    "utility": {
+        "non_ntl_gap_pct": (0.0, 1.5),
+        "ntl_pct": (0.5, 6.0),
+        "technical_pct": (3.0, 10.0),
+        "comm_loss_rate_pct": (0.0, 2.0),
+    },
+    "stressed": {
+        "non_ntl_gap_pct": (1.0, 6.0),
+        "ntl_pct": (4.0, 12.0),
+        "technical_pct": (4.0, 14.0),
+        "comm_loss_rate_pct": (1.0, 8.0),
+    },
+}
+
+
+def _resolve_seed(seed: int, randomize_seed: bool) -> int:
+    if randomize_seed:
+        # Use a large random integer so repeated runs are not deterministic.
+        return int(np.random.default_rng().integers(0, 2_147_483_647))
+    return int(seed)
+
+
+def _get_realism_targets(realism_profile: str) -> Dict[str, Tuple[float, float]]:
+    return REALISM_TARGETS.get(realism_profile, REALISM_TARGETS["utility"])
+
+
+def _evaluate_realism_fit(stats: Dict, realism_profile: str) -> Tuple[bool, Dict[str, float], float]:
+    targets = _get_realism_targets(realism_profile)
+
+    supplied = float(stats.get("total_energy_supplied_kwh", 0.0))
+    non_ntl_gap_pct = (
+        float(stats.get("metering_data_gap_kwh", 0.0)) / supplied * 100.0
+        if supplied > 0
+        else 0.0
+    )
+    ntl_pct = float(stats.get("ntl_percentage", 0.0))
+    technical_pct = float(stats.get("technical_loss_pct_of_source", 0.0))
+    comm_loss_rate_pct = float(stats.get("communication_loss_rate_percent", 0.0))
+
+    actual = {
+        "non_ntl_gap_pct": non_ntl_gap_pct,
+        "ntl_pct": ntl_pct,
+        "technical_pct": technical_pct,
+        "comm_loss_rate_pct": comm_loss_rate_pct,
+    }
+
+    in_range = True
+    distance = 0.0
+    for key, value in actual.items():
+        low, high = targets[key]
+        if value < low:
+            in_range = False
+            distance += (low - value) / max(high - low, 1e-9)
+        elif value > high:
+            in_range = False
+            distance += (value - high) / max(high - low, 1e-9)
+
+    return in_range, actual, distance
+
+
+def _resolve_project_path(path_str: str) -> str:
+    """Resolve a project-relative path from this file location."""
+    return str((Path(__file__).resolve().parent / path_str).resolve())
+
+
+def _build_feeder_load_definitions(load_names: List[str]) -> List[Tuple[str, CustomerType, float]]:
+    """Create (node, customer_type, annual_kwh) tuples for all feeder loads."""
+    customer_cycle = [
+        CustomerType.RESIDENTIAL,
+        CustomerType.COMMERCIAL,
+        CustomerType.INDUSTRIAL,
+        CustomerType.AGRICULTURAL,
+        CustomerType.PUBLIC_MUNICIPAL,
+        CustomerType.INSTITUTIONAL,
+        CustomerType.BULK,
+    ]
+    annual_kwh_by_type = {
+        CustomerType.RESIDENTIAL: 4000,
+        CustomerType.COMMERCIAL: 50000,
+        CustomerType.INDUSTRIAL: 200000,
+        CustomerType.AGRICULTURAL: 70000,
+        CustomerType.PUBLIC_MUNICIPAL: 60000,
+        CustomerType.INSTITUTIONAL: 90000,
+        CustomerType.BULK: 450000,
+    }
+
+    definitions: List[Tuple[str, CustomerType, float]] = []
+    for idx, load_name in enumerate(sorted([n for n in load_names if n], key=str.lower)):
+        customer_type = customer_cycle[idx % len(customer_cycle)]
+        definitions.append((load_name, customer_type, annual_kwh_by_type[customer_type]))
+
+    return definitions
+
+
+def _schedule_realistic_ntl_events(
+    ntl_engine: NTLInjectionEngine,
+    feeder_name: str,
+    load_names: List[str],
+    simulation_days: int,
+    realism_profile: str,
+) -> int:
+    """Generate NTL scenarios using prevalence sampling across the full customer set."""
+    sorted_nodes = sorted([n for n in load_names if n], key=str.lower)
+    total_nodes = len(sorted_nodes)
+    if total_nodes == 0:
+        return 0
+
+    # Draw feeder-wide theft prevalence; resulting affected nodes can be any count from 0..N.
+    prevalence_dist = {
+        "benchmark": (1.2, 16.0),
+        "utility": (1.8, 14.0),
+        "stressed": (2.5, 7.5),
+    }
+    alpha, beta = prevalence_dist.get(realism_profile, (1.8, 14.0))
+    sampled_prevalence = float(np.random.beta(alpha, beta))
+    theft_nodes = [n for n in sorted_nodes if np.random.random() < sampled_prevalence]
+
+    # Rare clean intervals and severe waves both remain possible.
+    num_theft_nodes = len(theft_nodes)
+
+    generated_events = ntl_engine.generate_realistic_theft_scenarios(
+        num_theft_nodes=num_theft_nodes,
+        theft_nodes=theft_nodes,
+        sim_duration_days=simulation_days,
+        realism_profile=realism_profile,
+    )
+    print(
+        "  NTL scenario generation: "
+        f"{len(generated_events)} events across {num_theft_nodes}/{total_nodes} nodes "
+        f"(sampled prevalence {sampled_prevalence*100:.1f}%)"
+    )
+    return len(generated_events)
+
+
+def _run_feeder_simulation(
+    feeder_name: str,
+    feeder_path: str,
+    realism_profile: str = "benchmark",
+    seed: int = 42,
+    randomize_seed: bool = False,
+    strict_realism: bool = True,
+    max_calibration_attempts: int = 4,
+):
     """
-    Example: IEEE 13-bus feeder with hybrid metering and NTL scenarios.
+    Generic feeder simulation with hybrid metering and NTL scenarios.
     """
     
     print("\n" + "="*70)
-    print("EXAMPLE 1: IEEE 13-Bus Feeder Digital Twin Simulation")
+    print(f"EXAMPLE 1: {feeder_name} Feeder Digital Twin Simulation")
     print("="*70)
     
     # Step 1: Configure simulation
     config = SimulationConfig()
-    config.feeder_name = "IEEE13"
+    config.feeder_name = feeder_name
     config.simulation_days = 7  # 1 week simulation
     config.time_step_minutes = 15
     config.smart_meter_penetration = 0.6  # 60% smart meters
-    config.num_ntl_nodes = 2
-    config.seed = 42
+    config.num_ntl_nodes = 0  # Will be sampled dynamically by realism profile.
+    config.seed = _resolve_seed(seed, randomize_seed)
+    config.realism_profile = realism_profile
+
+    meter_profile = REALISM_METER_PROFILES.get(realism_profile, REALISM_METER_PROFILES["benchmark"])
     
     print("\n[Step 1] Configuration:")
     print(f"  Feeder: {config.feeder_name}")
     print(f"  Duration: {config.simulation_days} days")
     print(f"  Time step: {config.time_step_minutes} minutes")
     print(f"  Smart meter penetration: {config.smart_meter_penetration*100:.0f}%")
+    print(f"  Realism profile: {config.realism_profile}")
+    print(f"  Random seed: {config.seed}")
     
-    # Step 2: Initialize components
-    print("\n[Step 2] Initializing components...")
+    attempts = max(1, int(max_calibration_attempts)) if strict_realism else 1
+    best_result = None
+    best_score = float("inf")
+    targets_met = False
+
+    # Step 2+: Build and run one or more candidate worlds, then keep the best realism fit.
+    for attempt in range(1, attempts + 1):
+        attempt_seed = config.seed if attempt == 1 else int(config.seed + attempt * 7919)
+        config.seed = attempt_seed
+
+        print("\n[Step 2] Initializing feeder model...")
+        opendss = OpenDSSInterface(feeder_path, config.feeder_name)
+
+        print("\n[Step 3] Creating digital twin...")
+        digital_twin = HybridGridDigitalTwin(config)
+        digital_twin.setup_feeder(opendss)
+
+        load_manager = HybridGridLoadManager()
+        feeder_loads = _build_feeder_load_definitions(opendss.loads)
+        print(f"  Detected feeder loads: {len(feeder_loads)}")
+        load_manager.add_load_nodes_bulk(feeder_loads)
+
+        metering_system = HybridMeteringSystem([node[0] for node in feeder_loads])
+        metering_system.deploy_meters_by_penetration(
+            config.smart_meter_penetration,
+            meter_profile=meter_profile,
+        )
+
+        ntl_engine = NTLInjectionEngine(load_manager)
+
+        print("\n[Step 4] Attaching metering and NTL components...")
+        digital_twin.setup_load_profiles(load_manager)
+        digital_twin.setup_metering_system(metering_system)
+        digital_twin.setup_ntl_engine(ntl_engine)
+
+        print("\n[Step 5] Scheduling NTL events...")
+        _schedule_realistic_ntl_events(
+            ntl_engine,
+            feeder_name,
+            [node for node, _, _ in feeder_loads],
+            simulation_days=config.simulation_days,
+            realism_profile=config.realism_profile,
+        )
+
+        print("\n[Step 6] Running simulation...")
+
+        def progress_callback(current, total):
+            if current % 96 == 0:  # Log every 24 hours
+                pct = (current / total) * 100
+                print(f"  Progress: {pct:.1f}% ({current}/{total} timesteps)")
+
+        try:
+            results_df = digital_twin.run_simulation(progress_callback=progress_callback)
+            print(f"\n  Simulation completed: {len(results_df)} measurements recorded")
+        except Exception as e:
+            print(f"\n  ERROR: Simulation failed - {str(e)}")
+            print("  NOTE: This may be due to missing IEEE feeder .dss file.")
+            print("  Download from: https://sourceforge.net/p/electricdss/code/HEAD/tree/trunk/Distrib/IEEETestCases/")
+            return
+
+        stats = digital_twin.get_summary_statistics()
+        in_range, actual, score = _evaluate_realism_fit(stats, config.realism_profile)
+        print(
+            "  Calibration check "
+            f"(attempt {attempt}/{attempts}, seed={attempt_seed}): "
+            f"non-NTL={actual['non_ntl_gap_pct']:.2f}%, "
+            f"NTL={actual['ntl_pct']:.2f}%, "
+            f"tech={actual['technical_pct']:.2f}%, "
+            f"comm={actual['comm_loss_rate_pct']:.2f}%"
+        )
+
+        if score < best_score:
+            best_score = score
+            best_result = (results_df, digital_twin)
+
+        if in_range:
+            print("  Calibration status: targets met, using this run.")
+            best_result = (results_df, digital_twin)
+            targets_met = True
+            break
+
+        if attempt < attempts:
+            print("  Calibration status: outside target bands, retrying...")
+
+    if best_result is None:
+        raise RuntimeError("No simulation result generated during realism calibration")
+
+    if strict_realism and not targets_met:
+        raise RuntimeError(
+            "Strict realism targets were not achieved within "
+            f"{attempts} attempts. Increase --max-calibration-attempts or adjust realism bands."
+        )
+
+    results_df, digital_twin = best_result
     
-    feeder_path = (
-        "ieee_feeders/electricdss-code-r4166-trunk-Distrib-IEEETestCases-13Bus/"
-        "electricdss-code-r4166-trunk-Distrib-IEEETestCases-13Bus/IEEE13Nodeckt.dss"
-    )
-    
-    # Create OpenDSS interface
-    opendss = OpenDSSInterface(feeder_path, config.feeder_name)
-    
-    # Create load manager
-    load_manager = HybridGridLoadManager()
-    
-    # Add representative loads from IEEE 13 feeder.
-    # Use actual OpenDSS load element names (not raw bus IDs).
-    ieee13_loads = [
-        ('634a', CustomerType.RESIDENTIAL, 3500),   # Residential
-        ('634b', CustomerType.INSTITUTIONAL, 8000), # Institutional
-        ('645', CustomerType.COMMERCIAL, 12000),    # Medium load (commercial)
-        ('646', CustomerType.PUBLIC_MUNICIPAL, 9000), # Public/municipal
-        ('652', CustomerType.AGRICULTURAL, 14000),  # Agricultural
-        ('671', CustomerType.INDUSTRIAL, 35000),    # Heavy load (industrial)
-        ('670a', CustomerType.BULK, 45000),         # Bulk customer
-    ]
-    load_manager.add_load_nodes_bulk(ieee13_loads)
-    
-    # Create metering system
-    metering_system = HybridMeteringSystem([node[0] for node in ieee13_loads])
-    metering_system.deploy_meters_by_penetration(config.smart_meter_penetration)
-    
-    # Create NTL engine
-    ntl_engine = NTLInjectionEngine(load_manager)
-    
-    # Step 3: Create digital twin
-    print("\n[Step 3] Creating digital twin...")
-    digital_twin = HybridGridDigitalTwin(config)
-    digital_twin.setup_feeder(opendss)
-    digital_twin.setup_load_profiles(load_manager)
-    digital_twin.setup_metering_system(metering_system)
-    digital_twin.setup_ntl_engine(ntl_engine)
-    
-    # Step 4: Configure NTL scenarios
-    print("\n[Step 4] Scheduling NTL events...")
-    
-    # Scenario 1: Partial meter bypass at node 652 (residential)
-    ntl_engine.schedule_ntl_event(
-        node_name='652',
-        ntl_type=NTLType.PARTIAL_METER_BYPASS,
-        start_day=2,
-        start_hour=18.0,
-        duration_hours=6.0,
-        intensity=0.35,
-        description="Partial bypass at residential node 652"
-    )
-    
-    # Scenario 2: Meter tampering at node 671 (industrial)
-    ntl_engine.schedule_ntl_event(
-        node_name='671',
-        ntl_type=NTLType.METER_TAMPERING,
-        start_day=3,
-        start_hour=8.0,
-        duration_hours=12.0,
-        intensity=0.30,
-        description="Meter tampering at industrial node 671"
-    )
-    
-    # Step 5: Run simulation
-    print("\n[Step 5] Running simulation...")
-    
-    def progress_callback(current, total):
-        if current % 96 == 0:  # Log every 24 hours
-            pct = (current / total) * 100
-            print(f"  Progress: {pct:.1f}% ({current}/{total} timesteps)")
-    
-    try:
-        results_df = digital_twin.run_simulation(progress_callback=progress_callback)
-        print(f"\n  Simulation completed: {len(results_df)} measurements recorded")
-    except Exception as e:
-        print(f"\n  ERROR: Simulation failed - {str(e)}")
-        print("  NOTE: This may be due to missing IEEE feeder .dss file.")
-        print("  Download from: https://sourceforge.net/p/electricdss/code/HEAD/tree/trunk/Distrib/IEEETestCases/")
-        return
-    
-    # Step 6: Print summary
-    print("\n[Step 6] Simulation Results:")
+    # Step 7: Print summary
+    print("\n[Step 7] Simulation Results:")
     digital_twin.print_summary()
     
-    # Step 7: Export results
-    print("\n[Step 7] Exporting results...")
+    # Step 8: Export results
+    print("\n[Step 8] Exporting results...")
     project_root = Path(__file__).resolve().parent
-    output_dir = str(project_root / "results" / "ieee13_example")
+    output_dir = str(project_root / "results" / f"{feeder_name.lower()}_example")
     digital_twin.export_results(output_dir)
     print(f"  Results exported to: {output_dir}")
     
-    # Step 8: Display sample data
-    print("\n[Step 8] Sample Measurements (first 20 rows):")
+    # Step 9: Display sample data
+    print("\n[Step 9] Sample Measurements (first 20 rows):")
     print(results_df.head(20).to_string())
     
-    # Step 9: Analyze NTL statistics
-    print("\n[Step 9] NTL Statistics by Node:")
+    # Step 10: Analyze NTL statistics
+    print("\n[Step 10] NTL Statistics by Node:")
     ntl_stats = digital_twin._compute_ntl_statistics()
     print(ntl_stats.to_string())
     
     return results_df, digital_twin
+
+
+def example_ieee13_simulation(
+    realism_profile: str = "benchmark",
+    seed: int = 42,
+    randomize_seed: bool = False,
+    strict_realism: bool = True,
+    max_calibration_attempts: int = 4,
+):
+    """Example: IEEE 13-bus feeder with hybrid metering and NTL scenarios."""
+    return _run_feeder_simulation(
+        "IEEE13",
+        _resolve_project_path(FEEDER_ENTRY_FILES["IEEE13"]),
+        realism_profile=realism_profile,
+        seed=seed,
+        randomize_seed=randomize_seed,
+        strict_realism=strict_realism,
+        max_calibration_attempts=max_calibration_attempts,
+    )
+
+
+def example_ieee34_simulation(
+    realism_profile: str = "benchmark",
+    seed: int = 42,
+    randomize_seed: bool = False,
+    strict_realism: bool = True,
+    max_calibration_attempts: int = 4,
+):
+    """Example: IEEE 34-bus feeder with hybrid metering and NTL scenarios."""
+    return _run_feeder_simulation(
+        "IEEE34",
+        _resolve_project_path(FEEDER_ENTRY_FILES["IEEE34"]),
+        realism_profile=realism_profile,
+        seed=seed,
+        randomize_seed=randomize_seed,
+        strict_realism=strict_realism,
+        max_calibration_attempts=max_calibration_attempts,
+    )
+
+
+def example_ieee123_simulation(
+    realism_profile: str = "benchmark",
+    seed: int = 42,
+    randomize_seed: bool = False,
+    strict_realism: bool = True,
+    max_calibration_attempts: int = 4,
+):
+    """Example: IEEE 123-bus feeder with hybrid metering and NTL scenarios."""
+    return _run_feeder_simulation(
+        "IEEE123",
+        _resolve_project_path(FEEDER_ENTRY_FILES["IEEE123"]),
+        realism_profile=realism_profile,
+        seed=seed,
+        randomize_seed=randomize_seed,
+        strict_realism=strict_realism,
+        max_calibration_attempts=max_calibration_attempts,
+    )
 
 
 def example_with_realistic_profiles():

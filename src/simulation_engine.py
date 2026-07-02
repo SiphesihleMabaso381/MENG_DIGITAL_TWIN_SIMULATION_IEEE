@@ -31,6 +31,7 @@ class SimulationConfig:
         self.num_ntl_nodes: int = 3
         self.ntl_intensity_range: tuple = (0.2, 0.6)
         self.seed: int = 42
+        self.realism_profile: str = "benchmark"
         
     def to_dict(self) -> Dict:
         """Convert configuration to dictionary."""
@@ -43,6 +44,7 @@ class SimulationConfig:
             'num_ntl_nodes': self.num_ntl_nodes,
             'ntl_intensity_range': self.ntl_intensity_range,
             'seed': self.seed,
+            'realism_profile': self.realism_profile,
         }
 
     @staticmethod
@@ -184,6 +186,11 @@ class HybridGridDigitalTwin:
                     
                     # Solve power flow
                     self.opendss_interface.solve_power_flow(mode="snapshot")
+
+                    # Aggregate feeder-level powers for loss decomposition.
+                    source_power = self.opendss_interface.get_total_circuit_power()
+                    metered_total_kw = sum(p for p, _ in metered_loads.values())
+                    actual_total_kw = sum(data['actual_power'][0] for data in all_ntl_data.values())
                     
                     # Record meter readings
                     meter_readings = self.metering_system.record_all_measurements(
@@ -197,6 +204,9 @@ class HybridGridDigitalTwin:
                         'hour': hour,
                         'timestep': step_global,
                         'convergence': self.opendss_interface.convergence_flag,
+                        'source_p_kw': source_power['p_kw'],
+                        'metered_total_kw': metered_total_kw,
+                        'actual_total_kw': actual_total_kw,
                         'meter_readings': meter_readings,
                         'ntl_data': all_ntl_data,
                     }
@@ -240,6 +250,9 @@ class HybridGridDigitalTwin:
                 meter_df['hour'] = snapshot['hour']
                 meter_df['timestep'] = snapshot['timestep']
                 meter_df['convergence'] = snapshot['convergence']
+                meter_df['source_p_kw'] = snapshot.get('source_p_kw', np.nan)
+                meter_df['metered_total_kw'] = snapshot.get('metered_total_kw', np.nan)
+                meter_df['actual_total_kw'] = snapshot.get('actual_total_kw', np.nan)
                 
                 # Add NTL data
                 for node_name, ntl_data in snapshot['ntl_data'].items():
@@ -338,6 +351,40 @@ class HybridGridDigitalTwin:
         total_energy_supplied = results_df['actual_p_kw'].sum() * (self.config.time_step_minutes / 60.0)
         total_energy_metered = results_df['measured_p_kw'].sum() * (self.config.time_step_minutes / 60.0)
         total_ntl_loss = results_df['ntl_loss_kw'].sum() * (self.config.time_step_minutes / 60.0)
+        total_gap_kwh = total_energy_supplied - total_energy_metered
+
+        # Non-NTL baseline is the post-theft physical demand before meter errors and comm drops.
+        baseline_non_ntl_kw = results_df['actual_p_kw'] - results_df['ntl_loss_kw']
+        measured_kw = results_df['measured_p_kw']
+        meas_factor = results_df.get('measurement_error_factor', pd.Series(1.0, index=results_df.index))
+
+        # What the meter would report without communication dropout (still includes meter error).
+        measured_no_comm_kw = baseline_non_ntl_kw * meas_factor
+
+        if 'communication_loss' in results_df.columns:
+            comm_mask = results_df['communication_loss'].astype(bool)
+            measured_no_comm_kw = measured_no_comm_kw.where(comm_mask, measured_kw)
+        else:
+            comm_mask = pd.Series(False, index=results_df.index)
+
+        non_ntl_gap_kw_series = baseline_non_ntl_kw - measured_kw
+        communication_gap_kw_series = measured_no_comm_kw - measured_kw
+        meter_bias_gap_kw_series = baseline_non_ntl_kw - measured_no_comm_kw
+
+        timestep_hours = self.config.time_step_minutes / 60.0
+        metering_data_gap_kwh = float(non_ntl_gap_kw_series.sum() * timestep_hours)
+        communication_gap_kwh = float(communication_gap_kw_series.sum() * timestep_hours)
+        meter_bias_gap_kwh = float(meter_bias_gap_kw_series.sum() * timestep_hours)
+        meter_bias_under_kwh = float(meter_bias_gap_kw_series.clip(lower=0.0).sum() * timestep_hours)
+        meter_bias_over_kwh = float((-meter_bias_gap_kw_series.clip(upper=0.0)).sum() * timestep_hours)
+
+        source_energy_kwh = 0.0
+        technical_loss_kwh_est = 0.0
+        for snapshot in self.simulation_results:
+            source_kw = float(snapshot.get('source_p_kw', 0.0))
+            metered_kw = float(snapshot.get('metered_total_kw', 0.0))
+            source_energy_kwh += source_kw * timestep_hours
+            technical_loss_kwh_est += max(source_kw - metered_kw, 0.0) * timestep_hours
         
         ntl_percentage = (total_ntl_loss / total_energy_supplied * 100) if total_energy_supplied > 0 else 0
         
@@ -346,14 +393,69 @@ class HybridGridDigitalTwin:
         return {
             'total_energy_supplied_kwh': total_energy_supplied,
             'total_energy_metered_kwh': total_energy_metered,
+            'total_gap_kwh': total_gap_kwh,
             'total_ntl_loss_kwh': total_ntl_loss,
+            'metering_data_gap_kwh': metering_data_gap_kwh,
+            'communication_gap_kwh': communication_gap_kwh,
+            'meter_bias_gap_kwh': meter_bias_gap_kwh,
+            'meter_bias_under_kwh': meter_bias_under_kwh,
+            'meter_bias_over_kwh': meter_bias_over_kwh,
+            'source_energy_kwh': source_energy_kwh,
+            'technical_loss_kwh_est': technical_loss_kwh_est,
+            'technical_loss_pct_of_source': (
+                (technical_loss_kwh_est / source_energy_kwh) * 100
+                if source_energy_kwh > 0
+                else 0.0
+            ),
             'ntl_percentage': ntl_percentage,
             'convergence_rate_percent': convergence_rate,
+            'communication_loss_rate_percent': (
+                float(results_df['communication_loss'].mean() * 100)
+                if 'communication_loss' in results_df.columns and len(results_df) > 0
+                else 0.0
+            ),
+            'profile': self.config.realism_profile,
             'total_meters': self.metering_system.get_metering_statistics()['total_meters'],
             'smart_meters': self.metering_system.get_metering_statistics()['smart_meters'],
             'legacy_meters': self.metering_system.get_metering_statistics()['legacy_meters'],
             'num_timesteps': len(results_df),
         }
+
+    def _evaluate_realism_kpis(self, stats: Dict) -> List[str]:
+        """Return KPI status lines compared to profile-specific expected ranges."""
+        profile = stats.get('profile', 'benchmark')
+        ranges = {
+            'benchmark': {
+                'technical_loss_pct_of_source': (2.0, 8.0),
+                'communication_loss_rate_percent': (0.0, 6.0),
+                'ntl_percentage': (0.0, 2.0),
+            },
+            'utility': {
+                'technical_loss_pct_of_source': (3.0, 12.0),
+                'communication_loss_rate_percent': (0.0, 3.0),
+                'ntl_percentage': (0.0, 3.0),
+            },
+            'stressed': {
+                'technical_loss_pct_of_source': (5.0, 18.0),
+                'communication_loss_rate_percent': (1.0, 12.0),
+                'ntl_percentage': (0.0, 6.0),
+            },
+        }.get(profile, {})
+
+        labels = {
+            'technical_loss_pct_of_source': 'Technical loss %',
+            'communication_loss_rate_percent': 'Communication loss %',
+            'ntl_percentage': 'NTL %',
+        }
+
+        lines: List[str] = []
+        for key, (low, high) in ranges.items():
+            value = float(stats.get(key, 0.0))
+            status = 'OK' if low <= value <= high else 'CHECK'
+            lines.append(
+                f"{status}: {labels[key]} = {value:.2f}% (expected {low:.1f}-{high:.1f}%)"
+            )
+        return lines
 
     def print_summary(self):
         """Print simulation summary to console."""
@@ -363,13 +465,27 @@ class HybridGridDigitalTwin:
         print("DIGITAL TWIN SIMULATION SUMMARY")
         print("="*60)
         print(f"Feeder:                    {self.config.feeder_name}")
+        print(f"Realism Profile:           {stats.get('profile', 'benchmark')}")
         print(f"Simulation Duration:       {self.config.simulation_days} days")
         print(f"Total Energy Supplied:     {stats.get('total_energy_supplied_kwh', 0):.1f} kWh")
         print(f"Total Energy Metered:      {stats.get('total_energy_metered_kwh', 0):.1f} kWh")
+        print(f"Total Gap (Supplied-Metered): {stats.get('total_gap_kwh', 0):.1f} kWh")
         print(f"Total NTL Loss:            {stats.get('total_ntl_loss_kwh', 0):.1f} kWh")
+        print(f"Non-NTL Meter/Data Gap (net): {stats.get('metering_data_gap_kwh', 0):.1f} kWh")
+        print(f"  - Communication Gap:        {stats.get('communication_gap_kwh', 0):.1f} kWh")
+        print(f"  - Meter Bias Gap (net):     {stats.get('meter_bias_gap_kwh', 0):.1f} kWh")
+        print(f"    * Under-registration:     {stats.get('meter_bias_under_kwh', 0):.1f} kWh")
+        print(f"    * Over-registration:      {stats.get('meter_bias_over_kwh', 0):.1f} kWh")
+        print(f"Source Energy (OpenDSS):   {stats.get('source_energy_kwh', 0):.1f} kWh")
+        print(f"Estimated Technical Loss:  {stats.get('technical_loss_kwh_est', 0):.1f} kWh")
+        print(f"Technical Loss % (source): {stats.get('technical_loss_pct_of_source', 0):.2f}%")
         print(f"NTL Percentage:            {stats.get('ntl_percentage', 0):.2f}%")
+        print(f"Comm Loss Rate:            {stats.get('communication_loss_rate_percent', 0):.2f}%")
         print(f"Power Flow Convergence:    {stats.get('convergence_rate_percent', 0):.1f}%")
         print(f"Total Meters:              {stats.get('total_meters', 0)}")
         print(f"  - Smart Meters:          {stats.get('smart_meters', 0)}")
         print(f"  - Legacy Meters:         {stats.get('legacy_meters', 0)}")
+        print("Realism KPI Check:")
+        for line in self._evaluate_realism_kpis(stats):
+            print(f"  - {line}")
         print("="*60 + "\n")

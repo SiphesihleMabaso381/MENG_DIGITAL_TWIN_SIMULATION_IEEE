@@ -17,10 +17,12 @@ from pathlib import Path
 
 from example_simulation import main as run_demo
 from example_simulation import example_ieee13_simulation
+from example_simulation import example_ieee34_simulation
+from example_simulation import example_ieee123_simulation
 from example_simulation import example_with_realistic_profiles
 
 
-def _relocate_main_outputs(base_dir: Path) -> None:
+def _relocate_main_outputs(base_dir: Path, feeder: str = "IEEE13") -> None:
     """Move outputs generated through main.py into an isolated folder."""
     main_output_dir = base_dir / "results" / "main_ieee"
     main_output_dir.mkdir(parents=True, exist_ok=True)
@@ -33,10 +35,10 @@ def _relocate_main_outputs(base_dir: Path) -> None:
             demo_dst.unlink()
         shutil.move(str(demo_profile), str(demo_dst))
 
-    # Full IEEE13 output folder created by example_ieee13_simulation()
-    ieee13_src = base_dir / "results" / "ieee13_example"
-    if ieee13_src.exists():
-        for src_file in ieee13_src.iterdir():
+    # Full feeder output folder created by example_ieeeXX_simulation()
+    feeder_src = base_dir / "results" / f"{feeder.lower()}_example"
+    if feeder_src.exists():
+        for src_file in feeder_src.iterdir():
             if src_file.is_file():
                 dst_file = main_output_dir / src_file.name
                 if dst_file.exists():
@@ -45,7 +47,7 @@ def _relocate_main_outputs(base_dir: Path) -> None:
 
         # Remove source directory if empty after moving files.
         try:
-            ieee13_src.rmdir()
+            feeder_src.rmdir()
         except OSError:
             pass
 
@@ -117,7 +119,7 @@ def _show_dashboard(base_dir: Path) -> None:
     render_dashboard(
         results_dir=str(results_dir),
         save_path=str(dashboard_image),
-        show=True,
+        show=False,
     )
     print(f"Dashboard generated at: {dashboard_image}")
 
@@ -148,26 +150,81 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Backward-compatible flag; full IEEE13 is now the default mode",
     )
+    parser.add_argument(
+        "--feeder",
+        choices=["IEEE13", "IEEE34", "IEEE123"],
+        default="IEEE13",
+        help="Feeder to run for full simulation mode (default: IEEE13)",
+    )
+    parser.add_argument(
+        "--realism-profile",
+        choices=["benchmark", "utility", "stressed"],
+        default="utility",
+        help="Meter/data realism profile for full simulation mode",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Deterministic random seed used when --random-seed is not set",
+    )
+    parser.add_argument(
+        "--random-seed",
+        action="store_true",
+        help="Use a fresh random seed each run (non-deterministic)",
+    )
+    parser.add_argument(
+        "--strict-realism",
+        dest="strict_realism",
+        action="store_true",
+        default=True,
+        help="Enable automatic calibration retries to fit real-world target bands",
+    )
+    parser.add_argument(
+        "--no-strict-realism",
+        dest="strict_realism",
+        action="store_false",
+        help="Disable automatic calibration retries",
+    )
+    parser.add_argument(
+        "--max-calibration-attempts",
+        type=int,
+        default=12,
+        help="Maximum calibration attempts when strict realism is enabled",
+    )
     return parser.parse_args()
 
 
 def run() -> int:
     args = parse_args()
     project_root = Path(__file__).resolve().parent
+    feeder = args.feeder
+
+    feeder_runners = {
+        "IEEE13": example_ieee13_simulation,
+        "IEEE34": example_ieee34_simulation,
+        "IEEE123": example_ieee123_simulation,
+    }
 
     if args.demo:
         run_demo()
-        _relocate_main_outputs(project_root)
+        _relocate_main_outputs(project_root, feeder=feeder)
         print(
             "Dashboard not generated in --demo mode. "
-            "Run without --demo to generate full IEEE13 outputs and dashboard."
+            f"Run without --demo to generate full {feeder} outputs and dashboard."
         )
     else:
         # Also generate standalone load profile export for main.py outputs.
         example_with_realistic_profiles()
         _ensure_main_load_profile_output(project_root)
-        example_ieee13_simulation()
-        _relocate_main_outputs(project_root)
+        feeder_runners[feeder](
+            realism_profile=args.realism_profile,
+            seed=args.seed,
+            randomize_seed=args.random_seed,
+            strict_realism=args.strict_realism,
+            max_calibration_attempts=args.max_calibration_attempts,
+        )
+        _relocate_main_outputs(project_root, feeder=feeder)
         _ensure_main_load_profile_output(project_root)
         _show_dashboard(project_root)
 

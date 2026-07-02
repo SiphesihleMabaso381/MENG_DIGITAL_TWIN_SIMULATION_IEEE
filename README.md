@@ -9,12 +9,15 @@ A comprehensive, high-fidelity digital twin simulator for hybrid power distribut
 - ✅ IEEE 13/34/123 bus test feeders support
 - ✅ Hybrid smart + legacy metering system simulation
 - ✅ Realistic load profiles (residential/commercial/industrial/agricultural/public/institutional/bulk)
-- ✅ 6 NTL scenario types with temporal scheduling
+- ✅ 6 NTL scenario types with stochastic temporal scheduling
 - ✅ Quasi-static time-series (QSTS) simulation
 - ✅ Data export for federated learning pipelines
 - ✅ Automatic dashboard generation and saved dashboard image
 - ✅ Main output consolidation into `results/main_ieee/` (including `load_profiles.csv`)
 - ✅ Automatic dashboard rendering fallback to external interpreter when local `.venv` plotting is unavailable
+- ✅ Strict realism calibration mode with retry logic and hard target-band enforcement
+- ✅ Prevalence-based NTL injection across full feeder populations (no fixed node-count cap)
+- ✅ Communication dropout and recovery/backfill behavior for settled-data realism
 - ✅ Optional SCADA / AMI / GIS data layer for future real datasets
 
 ---
@@ -103,7 +106,23 @@ print(dss.run_command("New Circuit.test"))
 python main.py
 ```
 
-This runs the full IEEE 13-bus simulation by default, exports results to `results/main_ieee/`, opens the dashboard, and saves it to `results/main_ieee/dashboard.png`.
+This runs the full IEEE 13-bus simulation by default, exports results to `results/main_ieee/`, and saves the dashboard to `results/main_ieee/dashboard.png`.
+
+Recommended command for highest realism:
+
+```bash
+python main.py --feeder IEEE13 --realism-profile utility --random-seed --strict-realism --max-calibration-attempts 12
+```
+
+Useful runtime options:
+
+- `--feeder IEEE13|IEEE34|IEEE123`
+- `--realism-profile benchmark|utility|stressed`
+- `--seed <int>`
+- `--random-seed`
+- `--strict-realism` / `--no-strict-realism`
+- `--max-calibration-attempts <int>`
+- `--demo`
 
 If you want the lightweight demo flow, run:
 
@@ -130,6 +149,18 @@ Typical files in `results/main_ieee/` after `python main.py`:
 ### VS Code Play Button
 
 If the Play button launches `main.py` with a local `.venv` that cannot import Matplotlib (`ft2font` issue), `main.py` automatically retries dashboard rendering using the external interpreter at `%LOCALAPPDATA%\venvs\MENG_DIGITAL_TWIN_SIMULATION_IEEE\Scripts\python.exe`.
+
+### Realism Enforcement (Current Behavior)
+
+When `--strict-realism` is enabled, the simulator retries candidate worlds until target bands are met (or fails if not met within attempts):
+
+- Utility profile target bands:
+  - Non-NTL meter/data gap: 0.0% to 1.5%
+  - NTL share: 0.5% to 6.0%
+  - Technical loss (source-based): 3.0% to 10.0%
+  - Communication loss rate: 0.0% to 2.0%
+
+This provides deterministic quality control on realism constraints while preserving stochastic scenario generation.
 
 ---
 
@@ -223,10 +254,11 @@ Simulates realistic smart and legacy meters with errors and communication issues
 
 **Key features:**
 - Smart meter characteristics (IEC 62053 Class 0.5)
-- Legacy meter characteristics (Class 2.0, monthly reads)
+- Legacy meter characteristics (configurable profile defaults)
 - Measurement errors (±accuracy class)
 - Clock drift simulation
-- Communication loss (packet dropout)
+- Communication loss with burst-outage behavior
+- Communication recovery/backfill for settled-data representation
 - Tamper detection flags
 
 **Usage:**
@@ -237,8 +269,14 @@ from src.load_profiles import CustomerType
 # Initialize
 metering = HybridMeteringSystem(['node1', 'node2', 'node3'])
 
-# Deploy meters
-metering.deploy_meters_by_penetration(smart_meter_fraction=0.6)
+# Deploy meters (optional realism profile)
+metering.deploy_meters_by_penetration(
+  smart_meter_fraction=0.6,
+  meter_profile={
+    'smart_communication_reliability': 0.992,
+    'smart_communication_recovery_rate': 0.85,
+  },
+)
 
 # Record measurements
 measurements = metering.record_all_measurements(
@@ -307,6 +345,8 @@ Schedules and simulates realistic non-technical loss scenarios.
 5. **Load Manipulation** - Temporal shifting/peak clipping
 6. **Meter Freezing** - Meter reading halts periodically
 
+Current scenario model uses feeder-wide prevalence sampling, so affected nodes are not artificially capped to a fixed small number.
+
 **Usage:**
 ```python
 from src.ntl_injection import NTLInjectionEngine, NTLType
@@ -334,8 +374,8 @@ power_data = ntl_engine.get_node_power_with_ntl(
 
 # Generate realistic theft patterns
 ntl_engine.generate_realistic_theft_scenarios(
-    num_theft_nodes=5,
-    sim_duration_days=30
+  sim_duration_days=30,
+  realism_profile="utility",
 )
 
 # Get NTL summary
@@ -499,8 +539,9 @@ loads:
 # NTL Configuration
 ntl:
   enable: true
-  num_theft_nodes: 3
-  intensity_range: [0.2, 0.6]
+  realism_profile: utility
+  prevalence_sampling: true
+  strict_realism: true
   scenarios:
     - type: partial_meter_bypass
       probability: 0.4
@@ -618,6 +659,6 @@ For issues or questions:
 
 ---
 
-**Last Updated:** June 2024  
-**Version:** 1.0.0  
-**Status:** Production Ready for Research
+**Last Updated:** July 2026  
+**Version:** 2.0.0  
+**Status:** Research-Grade with Strict Realism Calibration
