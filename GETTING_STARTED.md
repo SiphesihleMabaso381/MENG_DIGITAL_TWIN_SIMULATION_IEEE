@@ -1,423 +1,156 @@
 # Getting Started with the Hybrid Grid Digital Twin Simulator
 
-## Project Summary
+## Current Project State
 
-You now have a **production-ready, high-fidelity hybrid grid digital twin simulator** designed specifically for Non-Technical Loss (NTL) detection research. This simulator achieves **95-100% real-world grid fidelity** by combining:
+The project currently runs a physics-based digital twin with strict realism controls for distribution-loss decomposition research.
 
-- **OpenDSS physics-based power flow**
-- **Realistic smart + legacy metering**
-- **Temporal and seasonal load patterns**
-- **6 types of NTL scenarios**
-- **Federated learning-ready data export**
+What it now does by default:
 
----
+- Runs full feeder simulation (IEEE13 by default) through OpenDSS
+- Uses hybrid metering (smart plus legacy) with measurement error and communication behavior
+- Injects NTL scenarios stochastically using feeder-wide prevalence sampling
+- Exports unified outputs to [results/main_ieee](results/main_ieee)
+- Renders and saves dashboard image to [results/main_ieee/dashboard.png](results/main_ieee/dashboard.png)
+- Supports strict realism calibration retries and optional hard enforcement
 
-## What Was Built
+## Quick Setup
 
-### 2,500+ Lines of Production Code
+### 1. Install dependencies
 
-```
-src/opendsss_interface.py     (~550 lines) - OpenDSS wrapper with QSTS support
-src/hybrid_metering.py         (~450 lines) - Smart/legacy meter simulation
-src/load_profiles.py           (~500 lines) - Realistic consumption patterns
-src/ntl_injection.py           (~550 lines) - NTL scenario scheduling
-src/simulation_engine.py       (~450 lines) - Main orchestration engine
-example_simulation.py          (~350 lines) - Comprehensive examples
-```
-
-### Configuration Files
-
-```
-config/simulation_config.yaml  - Complete simulation parameters
-README.md                      - 500+ line comprehensive guide
-```
-
-### Documentation
-
-- Inline code documentation (docstrings)
-- Architecture diagrams
-- Usage examples
-- Integration patterns for ML pipelines
-
----
-
-## Next Steps: Installation & First Run
-
-### Step 1: Install Python Packages
-
-```bash
+```powershell
 cd "c:\Users\Simabaso\OneDrive - Shoprite Checkers (Pty) Limited\Desktop\MENG_DIGITAL_TWIN_SIMULATION_IEEE"
 .\setup.ps1
 ```
 
-This setup script now creates the virtual environment outside OneDrive by default:
+This creates the environment outside OneDrive by default:
 
-- `%LOCALAPPDATA%\venvs\MENG_DIGITAL_TWIN_SIMULATION_IEEE`
+- %LOCALAPPDATA%\venvs\MENG_DIGITAL_TWIN_SIMULATION_IEEE
 
-This keeps compiled libraries (for example Matplotlib binaries) out of synced folders that may be flagged by enterprise security tools.
-
-Activate that environment with:
+Activate manually when needed:
 
 ```powershell
 & "$env:LOCALAPPDATA\venvs\MENG_DIGITAL_TWIN_SIMULATION_IEEE\Scripts\Activate.ps1"
 ```
 
-If you want a custom external location, run:
+### 2. Ensure IEEE feeders are available
 
-```bash
-.\setup.ps1 -VenvPath "D:\python_envs\MENG_DIGITAL_TWIN_SIMULATION_IEEE"
+Place extracted IEEE 13/34/123 feeder folders under [ieee_feeders](ieee_feeders).
+
+### 3. Run with strict realism (recommended)
+
+```powershell
+python main.py --feeder IEEE13 --realism-profile utility --random-seed --strict-realism --max-calibration-attempts 12
 ```
 
-**Expected packages:**
-- numpy, pandas, scipy, scikit-learn
-- opendssdirect.py (⚠️ Note: Windows only with native DLL)
-- matplotlib for visualization
+This command is the recommended high-realism execution path.
 
-### Step 2: Handle OpenDSS Installation
+## Common Commands
 
-**Option A: Direct Installation (Windows)**
-```bash
-# If using Windows:
-pip install opendssdirect.py
-```
+### Default full run
 
-**Option B: Alternative Package**
-```bash
-# Alternative (more portable):
-pip install opendssdirect
-```
-
-**Verify:**
-```python
-python -c "import opendssdirect as dss; print('OpenDSS OK')"
-```
-
-### Step 3: Download IEEE Feeder Files
-
-1. Go to: https://sourceforge.net/p/electricdss/code/HEAD/tree/trunk/Distrib/IEEETestCases/
-2. Download and extract these three feeder folders:
-    - `13Bus`
-    - `34Bus`
-    - `123Bus`
-3. Place the extracted folders in: `ieee_feeders/` directory
-4. Use these entry files:
-    - IEEE13: `.../IEEE13Nodeckt.dss`
-    - IEEE34: `.../Run_IEEE34Mod1.dss` (or `Run_IEEE34Mod2.dss`)
-    - IEEE123: `.../Run_IEEE123Bus.DSS` (or `IEEE123Master.dss`)
-
-### Step 4: Run the Main Project Flow
-
-```bash
-cd "MENG_DIGITAL_TWIN_SIMULATION_IEEE"
+```powershell
 python main.py
 ```
 
-This is the default full IEEE13 run and it now exports outputs to `results/main_ieee/`.
+### Demo-only run
 
-Expected outputs after `python main.py`:
-- `results/main_ieee/simulation_results.csv`
-- `results/main_ieee/ntl_events.csv`
-- `results/main_ieee/ntl_statistics.csv`
-- `results/main_ieee/simulation_config.json`
-- `results/main_ieee/load_profiles.csv`
-- `results/main_ieee/dashboard.png`
-
-The dashboard window is shown and the image is saved to disk.
-
-If you want the lightweight demo path instead:
-
-```bash
+```powershell
 python main.py --demo
 ```
 
-Demo mode runs lightweight examples and exports `load_profiles.csv`, but does not generate full IEEE dashboard inputs.
+### Alternate feeders
 
-If you want to run all raw examples directly (without the main launcher):
-
-```bash
-python example_simulation.py
+```powershell
+python main.py --feeder IEEE34 --realism-profile utility --random-seed --strict-realism
+python main.py --feeder IEEE123 --realism-profile utility --random-seed --strict-realism
 ```
 
----
+### Disable strict realism
 
-## Project Structure (Ready to Use)
-
-```
-MENG_DIGITAL_TWIN_SIMULATION_IEEE/
-├── src/
-│   ├── __init__.py
-│   ├── opendsss_interface.py     ✅ Ready
-│   ├── hybrid_metering.py        ✅ Ready
-│   ├── load_profiles.py          ✅ Ready
-│   ├── ntl_injection.py          ✅ Ready
-│   └── simulation_engine.py      ✅ Ready
-├── ieee_feeders/                 📥 Awaiting .dss files
-├── config/
-│   └── simulation_config.yaml    ✅ Ready
-├── data/                         📁 For datasets
-├── results/                      📁 For outputs
-├── notebooks/                    📁 For Jupyter analysis
-├── docs/                         📁 For documentation
-├── example_simulation.py         ✅ Ready
-├── requirements.txt              ✅ Ready
-└── README.md                     ✅ Ready
+```powershell
+python main.py --feeder IEEE13 --realism-profile utility --random-seed --no-strict-realism
 ```
 
----
+## CLI Options in Main Flow
 
-## Real-World Fidelity: 95-100%
+- --demo
+- --feeder IEEE13|IEEE34|IEEE123
+- --realism-profile benchmark|utility|stressed
+- --seed <int>
+- --random-seed
+- --strict-realism
+- --no-strict-realism
+- --max-calibration-attempts <int>
 
-Your simulator now models:
+## Output Files
 
-| Component | Fidelity | Real-World Features |
-|-----------|----------|-------------------|
-| Network physics | 95% | KCL/KVL, 3-phase unbalance, temp-corrected impedance |
-| Load profiles | 90% | Hourly patterns, seasonal variation, customer types |
-| Smart meters | 90% | Class 0.5, 15-min data, V/I sensors, communication loss |
-| Legacy meters | 85% | Class 2.0, monthly reads, mechanical drift, errors |
-| NTL scenarios | 85% | 6 theft types, temporal patterns, adaptive behavior |
-| South Africa context | 80% | Load shedding ready, prepaid meter support |
+After full runs, the main consolidated output folder is [results/main_ieee](results/main_ieee).
 
----
+Typical files:
 
-## Key Capabilities
+- [results/main_ieee/simulation_results.csv](results/main_ieee/simulation_results.csv)
+- [results/main_ieee/ntl_events.csv](results/main_ieee/ntl_events.csv)
+- [results/main_ieee/ntl_statistics.csv](results/main_ieee/ntl_statistics.csv)
+- [results/main_ieee/simulation_config.json](results/main_ieee/simulation_config.json)
+- [results/main_ieee/load_profiles.csv](results/main_ieee/load_profiles.csv)
+- [results/main_ieee/dashboard.png](results/main_ieee/dashboard.png)
 
-### 1. Generate Realistic Consumption Data
-```python
-load_manager.add_load_node('residential_1', CustomerType.RESIDENTIAL, 4000)
-p_kw, q_kvar = load_manager.get_loads_at_time(day=180, hour=14.5)
+## Realism Model Notes
+
+### Strict realism calibration
+
+When strict realism is enabled, simulation attempts are retried until profile target bands are met, otherwise the run fails.
+
+Current utility profile targets:
+
+- Non-NTL meter/data gap: 0.0% to 1.5%
+- NTL share: 0.5% to 6.0%
+- Technical loss (source-based): 3.0% to 10.0%
+- Communication loss rate: 0.0% to 2.0%
+
+### NTL injection behavior
+
+NTL is not fixed to a small hard-coded number of nodes. It is sampled through feeder-wide prevalence and event stochasticity, so affected nodes can vary run-to-run and may involve any subset of customers.
+
+### Communication loss behavior
+
+Metering includes both dropout and recovery/backfill behavior to better reflect settled-data workflows.
+
+## Recommended Research Practice
+
+Use repeated Monte Carlo style runs with random seeds and summarize distributions, not single-run values.
+
+Example:
+
+```powershell
+python main.py --feeder IEEE13 --realism-profile utility --random-seed --strict-realism --max-calibration-attempts 12
 ```
 
-### 2. Simulate Hybrid Metering
-```python
-metering = HybridMeteringSystem(nodes)
-metering.deploy_meters_by_penetration(0.6)  # 60% smart, 40% legacy
-measurements_df = metering.record_all_measurements(node_power_map)
+Repeat this command across multiple runs and compare KPI bands from exported CSVs.
+
+## Troubleshooting
+
+### Matplotlib or ft2font issues in OneDrive environment
+
+Use the external environment under %LOCALAPPDATA%\venvs. The launcher already includes fallback rendering logic.
+
+### Missing feeder files
+
+Ensure feeder folders and entry files exist under [ieee_feeders](ieee_feeders).
+
+### Strict realism run fails
+
+Increase attempts first:
+
+```powershell
+python main.py --feeder IEEE13 --realism-profile utility --random-seed --strict-realism --max-calibration-attempts 20
 ```
 
-### 3. Inject NTL Scenarios
-```python
-ntl_engine.schedule_ntl_event(
-    node='node1',
-    ntl_type=NTLType.PARTIAL_METER_BYPASS,
-    start_day=5,
-    duration_hours=6,
-    intensity=0.35  # 35% theft
-)
-```
+If still failing, switch profile or temporarily disable strict mode for exploratory runs.
 
-### 4. Run Full Simulation
-```python
-digital_twin = HybridGridDigitalTwin(config)
-results = digital_twin.run_simulation()
-digital_twin.export_results("results/")
-```
+## Next Step
 
-### 5. Export ML-Ready Datasets
-```python
-results_df = digital_twin._compile_results_dataframe()
-features = results_df[['measured_p_kw', 'Voltage_pu', ...]].values
-labels = (results_df['ntl_type'] != 'None').astype(int).values
-```
-
----
-
-## For Your MEng Research: Roadmap
-
-### Now (Before Registration):
-✅ Build and test simulation framework  
-✅ Generate synthetic datasets  
-✅ Validate with real load patterns  
-✅ Finalize NTL scenario definitions  
-
-### After ISSDA Registration (Next Year):
-1. Download ISSDA CER dataset
-2. Replace synthetic profiles with real data (one line change)
-3. Re-run full simulation with real consumption data
-4. Retrain and validate federated learning models
-5. Publish results
-
-**The beauty:** Your framework is designed to accept real data seamlessly.
-
----
-
-## Integration with Federated Learning
-
-When ready to build your FL framework:
-
-```python
-# Data ready for federated partitioning
-results_df = digital_twin._compile_results_dataframe()
-
-# Create clients per node
-for node_id in results_df['node_name'].unique():
-    node_data = results_df[results_df['node_name'] == node_id]
-    
-    # Extract features and labels
-    X = node_data[['measured_p_kw', 'measured_q_kvar', 'Voltage_pu']].values
-    y = (node_data['ntl_type'] != 'None').astype(int).values
-    
-    # Create federated client for this node
-    fed_client = FederatedClient(node_id, X, y)
-```
-
----
-
-## Customization: What You Can Adjust
-
-### 1. Load Profiles
-Edit consumption patterns per customer type in `load_profiles.py`:
-```python
-RESIDENTIAL_DAILY_PROFILE = np.array([...])  # 24-hour pattern
-```
-
-### 2. Metering Characteristics
-Modify meter accuracy, clock drift, communication reliability in `hybrid_metering.py`
-
-### 3. NTL Scenarios
-Add new theft types or modify detection logic in `ntl_injection.py`
-
-### 4. South Africa Grid Context
-Add load shedding stages, prepaid meter behavior in configuration
-
-### 5. Performance Tuning
-Adjust time step, number of nodes, simulation duration in config
-
----
-
-## Troubleshooting Guide
-
-### Issue: "OpenDSS module not found"
-**Solution:**
-```bash
-pip install opendssdirect.py
-# If still fails, use alternative:
-pip uninstall opendssdirect.py -y
-pip install opendssdirect
-```
-
-### Issue: "IEEE feeder files not found"
-**Solution:**
-Download from: https://sourceforge.net/p/electricdss/code/HEAD/tree/trunk/Distrib/IEEETestCases/
-Place in: `ieee_feeders/`
-
-### Issue: "Power flow convergence failure"
-**Solution:**
-- Verify feeder file format
-- Reduce time step (increase `time_step_minutes`)
-- Disable controls: `opendss.run_command("Set ControlMode=OFF")`
-
-### Issue: "Memory error with large datasets"
-**Solution:**
-```python
-# Process in batches
-for day in range(1, 31):
-    results = digital_twin.run_simulation(day_only=day)
-    results.to_csv(f"day_{day}.csv")
-```
-
-### Issue: "ft2font" or Matplotlib import error when pressing Play in VS Code
-**Cause:**
-- The Play button can sometimes launch with a local `.venv` in OneDrive, where enterprise scanning may have removed Matplotlib binary components.
-
-**Solution:**
-- Use the external environment from `%LOCALAPPDATA%\venvs\MENG_DIGITAL_TWIN_SIMULATION_IEEE`.
-- `main.py` includes a dashboard fallback that retries rendering with that external interpreter when needed.
-
----
-
-## Publication-Quality Output
-
-Your simulation is ready for IEEE/journal publication because:
-
-✅ Physics-based (OpenDSS KCL/KVL enforcement)  
-✅ Standard test cases (IEEE 13/34/123 feeders)  
-✅ Realistic heterogeneity (smart + legacy metering)  
-✅ Comprehensive documentation  
-✅ Reproducible (seed-based randomization)  
-✅ Modular architecture (easy to extend)  
-
----
-
-## Recommended Research Workflow
-
-**Phase 1 (Now): Framework Validation**
-- Run `example_simulation.py`
-- Validate load profiles against OpenEI/ISSDA patterns
-- Verify NTL injection logic
-- Test export formats
-
-**Phase 2: Model Development**
-- Implement federated learning clients
-- Add explainable AI (SHAP, LIME)
-- Embed physics-informed constraints
-
-**Phase 3: Validation (Next Year)**
-- Integrate real ISSDA data
-- Validate detection accuracy
-- Measure privacy preservation
-- Assess mitigation effectiveness
-
-**Phase 4: Publication**
-- Comparative analysis vs. baseline methods
-- Scalability experiments
-- Case study on real network (if available)
-- Lessons learned and future work
-
----
-
-## Support & Documentation
-
-**Main Resources:**
-1. `README.md` - Comprehensive guide (500+ lines)
-2. `example_simulation.py` - Working code examples
-3. `config/simulation_config.yaml` - All parameters documented
-4. Source code docstrings - Detailed function documentation
-
-**External Resources:**
-- OpenDSS Wiki: https://sourceforge.net/p/electricdss/wiki/
-- OpenEI: https://openei.org/
-- ISSDA: https://www.ucd.ie/issda/
-
----
-
-## Key Statistics
-
-- **Total Code:** 2,500+ lines
-- **Classes:** 12 core classes
-- **Methods:** 80+ public methods
-- **Configuration Parameters:** 50+
-- **Supported NTL Types:** 6
-- **Load Profile Types:** 7 (residential/commercial/industrial/agricultural/public_municipal/institutional/bulk)
-- **Meter Types:** 2 (smart/legacy)
-- **Test Feeders Supported:** 3 (IEEE 13/34/123)
-
----
-
-## Next Action Items
-
-### Immediate (This Week)
-1. ✅ Review the code structure
-2. ✅ Install dependencies: `./setup.ps1`
-3. ✅ Download IEEE .dss files
-4. ✅ Run: `python main.py`
-
-### Short Term (Next 2 Weeks)
-1. Customize load profiles to match your region
-2. Adjust NTL parameters to realistic values
-3. Run 30-day simulation and validate output
-4. Generate datasets for FL research
-
-### Medium Term (Next Month)
-1. Implement federated learning framework
-2. Integrate explainable AI techniques
-3. Add physics-informed constraints
-4. Begin model training/validation
-
-### Long Term (Next Year)
-1. Register for MEng at university
-2. Download ISSDA dataset
-3. Replace synthetic profiles with real data
+For full details, architecture, and module-level API examples, use [README.md](README.md).
 4. Validate on production-like scenarios
 5. Publish research findings
 
