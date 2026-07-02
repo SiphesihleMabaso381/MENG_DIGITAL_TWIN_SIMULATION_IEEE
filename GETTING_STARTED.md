@@ -47,7 +47,25 @@ README.md                      - 500+ line comprehensive guide
 
 ```bash
 cd "c:\Users\Simabaso\OneDrive - Shoprite Checkers (Pty) Limited\Desktop\MENG_DIGITAL_TWIN_SIMULATION_IEEE"
-pip install -r requirements.txt
+.\setup.ps1
+```
+
+This setup script now creates the virtual environment outside OneDrive by default:
+
+- `%LOCALAPPDATA%\venvs\MENG_DIGITAL_TWIN_SIMULATION_IEEE`
+
+This keeps compiled libraries (for example Matplotlib binaries) out of synced folders that may be flagged by enterprise security tools.
+
+Activate that environment with:
+
+```powershell
+& "$env:LOCALAPPDATA\venvs\MENG_DIGITAL_TWIN_SIMULATION_IEEE\Scripts\Activate.ps1"
+```
+
+If you want a custom external location, run:
+
+```bash
+.\setup.ps1 -VenvPath "D:\python_envs\MENG_DIGITAL_TWIN_SIMULATION_IEEE"
 ```
 
 **Expected packages:**
@@ -87,18 +105,38 @@ python -c "import opendssdirect as dss; print('OpenDSS OK')"
     - IEEE34: `.../Run_IEEE34Mod1.dss` (or `Run_IEEE34Mod2.dss`)
     - IEEE123: `.../Run_IEEE123Bus.DSS` (or `IEEE123Master.dss`)
 
-### Step 4: Run Example Simulations
+### Step 4: Run the Main Project Flow
 
 ```bash
 cd "MENG_DIGITAL_TWIN_SIMULATION_IEEE"
-python example_simulation.py
+python main.py
 ```
 
-**This will:**
-- Generate realistic load profiles (3 customer types)
-- Demonstrate all 6 NTL scenario types
-- Create sample output in `results/` directory
-- Print summary statistics
+This is the default full IEEE13 run and it now exports outputs to `results/main_ieee/`.
+
+Expected outputs after `python main.py`:
+- `results/main_ieee/simulation_results.csv`
+- `results/main_ieee/ntl_events.csv`
+- `results/main_ieee/ntl_statistics.csv`
+- `results/main_ieee/simulation_config.json`
+- `results/main_ieee/load_profiles.csv`
+- `results/main_ieee/dashboard.png`
+
+The dashboard window is shown and the image is saved to disk.
+
+If you want the lightweight demo path instead:
+
+```bash
+python main.py --demo
+```
+
+Demo mode runs lightweight examples and exports `load_profiles.csv`, but does not generate full IEEE dashboard inputs.
+
+If you want to run all raw examples directly (without the main launcher):
+
+```bash
+python example_simulation.py
+```
 
 ---
 
@@ -278,6 +316,14 @@ for day in range(1, 31):
     results.to_csv(f"day_{day}.csv")
 ```
 
+### Issue: "ft2font" or Matplotlib import error when pressing Play in VS Code
+**Cause:**
+- The Play button can sometimes launch with a local `.venv` in OneDrive, where enterprise scanning may have removed Matplotlib binary components.
+
+**Solution:**
+- Use the external environment from `%LOCALAPPDATA%\venvs\MENG_DIGITAL_TWIN_SIMULATION_IEEE`.
+- `main.py` includes a dashboard fallback that retries rendering with that external interpreter when needed.
+
 ---
 
 ## Publication-Quality Output
@@ -342,7 +388,7 @@ Your simulation is ready for IEEE/journal publication because:
 - **Methods:** 80+ public methods
 - **Configuration Parameters:** 50+
 - **Supported NTL Types:** 6
-- **Load Profile Types:** 3 (residential/commercial/industrial)
+- **Load Profile Types:** 7 (residential/commercial/industrial/agricultural/public_municipal/institutional/bulk)
 - **Meter Types:** 2 (smart/legacy)
 - **Test Feeders Supported:** 3 (IEEE 13/34/123)
 
@@ -352,9 +398,9 @@ Your simulation is ready for IEEE/journal publication because:
 
 ### Immediate (This Week)
 1. ✅ Review the code structure
-2. ✅ Install dependencies: `pip install -r requirements.txt`
+2. ✅ Install dependencies: `./setup.ps1`
 3. ✅ Download IEEE .dss files
-4. ✅ Run: `python example_simulation.py`
+4. ✅ Run: `python main.py`
 
 ### Short Term (Next 2 Weeks)
 1. Customize load profiles to match your region

@@ -1,6 +1,7 @@
 param(
     [switch]$SkipVenv,
     [switch]$SkipInstall,
+    [string]$VenvPath = "",
     [string]$PythonCmd = "python"
 )
 
@@ -12,15 +13,21 @@ Write-Host "[1/4] Checking Python..."
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $projectRoot
 
+if ([string]::IsNullOrWhiteSpace($VenvPath)) {
+    # Keep binary packages out of OneDrive-synced folders.
+    $VenvPath = Join-Path $env:LOCALAPPDATA "venvs\MENG_DIGITAL_TWIN_SIMULATION_IEEE"
+}
+
 if (-not $SkipVenv) {
-    Write-Host "[2/4] Creating virtual environment (.venv)..."
-    if (-not (Test-Path ".venv")) {
-        & $PythonCmd -m venv .venv
+    Write-Host "[2/4] Creating virtual environment ($VenvPath)..."
+    if (-not (Test-Path $VenvPath)) {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $VenvPath) -Force | Out-Null
+        & $PythonCmd -m venv $VenvPath
     } else {
-        Write-Host "      .venv already exists, reusing it."
+        Write-Host "      Existing environment found, reusing it."
     }
 
-    $venvPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
+    $venvPython = Join-Path $VenvPath "Scripts\python.exe"
 } else {
     Write-Host "[2/4] Skipping virtual environment creation."
     $venvPython = $PythonCmd
@@ -59,7 +66,7 @@ if ($missing.Count -gt 0) {
 
 if (-not $SkipVenv) {
     Write-Host "To run with virtual environment:"
-    Write-Host "  .\.venv\Scripts\Activate.ps1"
+    Write-Host ('  & "{0}\Scripts\Activate.ps1"' -f $VenvPath)
     Write-Host "  python main.py"
     Write-Host "  python main.py --full-ieee13"
 } else {

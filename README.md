@@ -13,6 +13,8 @@ A comprehensive, high-fidelity digital twin simulator for hybrid power distribut
 - ✅ Quasi-static time-series (QSTS) simulation
 - ✅ Data export for federated learning pipelines
 - ✅ Automatic dashboard generation and saved dashboard image
+- ✅ Main output consolidation into `results/main_ieee/` (including `load_profiles.csv`)
+- ✅ Automatic dashboard rendering fallback to external interpreter when local `.venv` plotting is unavailable
 - ✅ Optional SCADA / AMI / GIS data layer for future real datasets
 
 ---
@@ -65,7 +67,15 @@ cd MENG_DIGITAL_TWIN_SIMULATION_IEEE
 
 2. **Install Python dependencies:**
 ```bash
-pip install -r requirements.txt
+.\setup.ps1
+```
+
+`setup.ps1` creates the virtual environment outside OneDrive by default at `%LOCALAPPDATA%\venvs\MENG_DIGITAL_TWIN_SIMULATION_IEEE`, which helps avoid enterprise security flags on synced binary package files.
+
+To activate that environment manually:
+
+```powershell
+& "$env:LOCALAPPDATA\venvs\MENG_DIGITAL_TWIN_SIMULATION_IEEE\Scripts\Activate.ps1"
 ```
 
 3. **Download IEEE test feeders:**
@@ -93,7 +103,7 @@ print(dss.run_command("New Circuit.test"))
 python main.py
 ```
 
-This runs the full IEEE 13-bus simulation by default, then opens the dashboard and saves it to `results/main_ieee/dashboard.png`.
+This runs the full IEEE 13-bus simulation by default, exports results to `results/main_ieee/`, opens the dashboard, and saves it to `results/main_ieee/dashboard.png`.
 
 If you want the lightweight demo flow, run:
 
@@ -101,13 +111,25 @@ If you want the lightweight demo flow, run:
 python main.py --demo
 ```
 
-The demo still generates the load profile and NTL example outputs.
+The demo generates lightweight examples and exports `load_profiles.csv`, but does not generate the full IEEE dashboard dataset.
 
 ### Output
 - Full-run outputs are exported to: `results/main_ieee/`
-- CSV files with measurements, NTL events, and statistics
+- CSV files with measurements, NTL events, statistics, and load profiles
 - Dashboard image saved as `results/main_ieee/dashboard.png`
-- Demo load profile output remains in `results/load_profiles.csv`
+- Main load profile output saved as `results/main_ieee/load_profiles.csv`
+
+Typical files in `results/main_ieee/` after `python main.py`:
+- `simulation_results.csv`
+- `ntl_events.csv`
+- `ntl_statistics.csv`
+- `simulation_config.json`
+- `load_profiles.csv`
+- `dashboard.png`
+
+### VS Code Play Button
+
+If the Play button launches `main.py` with a local `.venv` that cannot import Matplotlib (`ft2font` issue), `main.py` automatically retries dashboard rendering using the external interpreter at `%LOCALAPPDATA%\venvs\MENG_DIGITAL_TWIN_SIMULATION_IEEE\Scripts\python.exe`.
 
 ---
 

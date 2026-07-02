@@ -9,13 +9,15 @@ Optional behavior:
 """
 
 import argparse
+import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 from example_simulation import main as run_demo
 from example_simulation import example_ieee13_simulation
-from src.dashboard import render_dashboard
+from example_simulation import example_with_realistic_profiles
 
 
 def _relocate_main_outputs(base_dir: Path) -> None:
@@ -59,11 +61,77 @@ def _show_dashboard(base_dir: Path) -> None:
             f"{results_dir}"
         )
         return
+
+    try:
+        # Import lazily so simulation can run even if matplotlib is unavailable.
+        from src.dashboard import render_dashboard
+    except Exception as exc:
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        external_python = (
+            Path(local_app_data)
+            / "venvs"
+            / "MENG_DIGITAL_TWIN_SIMULATION_IEEE"
+            / "Scripts"
+            / "python.exe"
+        )
+
+        if external_python.exists() and external_python.resolve() != Path(sys.executable).resolve():
+            print(
+                "Current interpreter cannot render dashboard. "
+                "Trying external interpreter..."
+            )
+            cmd = [
+                str(external_python),
+                str(base_dir / "src" / "dashboard.py"),
+                "--results-dir",
+                str(results_dir),
+                "--save",
+                str(dashboard_image),
+            ]
+            completed = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=str(base_dir),
+                check=False,
+            )
+            if completed.returncode == 0 and dashboard_image.exists():
+                print(f"Dashboard generated at: {dashboard_image}")
+                return
+
+            print(
+                "Dashboard skipped: plotting dependencies are unavailable "
+                f"({exc}). External render failed with code "
+                f"{completed.returncode}."
+            )
+            if completed.stderr:
+                print(completed.stderr.strip())
+            return
+
+        print(
+            "Dashboard skipped: plotting dependencies are unavailable "
+            f"({exc})."
+        )
+        return
+
     render_dashboard(
         results_dir=str(results_dir),
         save_path=str(dashboard_image),
         show=True,
     )
+    print(f"Dashboard generated at: {dashboard_image}")
+
+
+def _ensure_main_load_profile_output(base_dir: Path) -> None:
+    """Ensure load_profiles.csv is available in results/main_ieee for main.py runs."""
+    src_profile = base_dir / "results" / "load_profiles.csv"
+    dst_dir = base_dir / "results" / "main_ieee"
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    dst_profile = dst_dir / "load_profiles.csv"
+
+    if src_profile.exists():
+        shutil.copy2(str(src_profile), str(dst_profile))
+        print(f"Load profiles exported to: {dst_profile}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -90,11 +158,18 @@ def run() -> int:
     if args.demo:
         run_demo()
         _relocate_main_outputs(project_root)
+        print(
+            "Dashboard not generated in --demo mode. "
+            "Run without --demo to generate full IEEE13 outputs and dashboard."
+        )
     else:
+        # Also generate standalone load profile export for main.py outputs.
+        example_with_realistic_profiles()
+        _ensure_main_load_profile_output(project_root)
         example_ieee13_simulation()
         _relocate_main_outputs(project_root)
-
-    _show_dashboard(project_root)
+        _ensure_main_load_profile_output(project_root)
+        _show_dashboard(project_root)
 
     return 0
 
