@@ -47,6 +47,48 @@ class NTLInjectionEngine:
     Also supports South African operational disturbances such as load shedding,
     which should be separated from theft for training and analytics.
     """
+
+    @staticmethod
+    def _get_profile_settings(realism_profile: str, scenario: str = "theft") -> Dict:
+        """Return profile settings for theft or operational disturbance generation."""
+        if scenario == "operational":
+            profile_settings = {
+                "benchmark": {"load_shedding": 0.20, "rotational_outage": 0.10, "voltage_sag": 0.10, "feeder_trip": 0.05},
+                "utility": {"load_shedding": 0.45, "rotational_outage": 0.25, "voltage_sag": 0.20, "feeder_trip": 0.10},
+                "stressed": {"load_shedding": 0.55, "rotational_outage": 0.30, "voltage_sag": 0.25, "feeder_trip": 0.12},
+            }
+            return profile_settings.get(realism_profile, profile_settings["utility"])
+
+        profile_settings = {
+            "benchmark": {
+                "type_weights": [0.45, 0.35, 0.15, 0.05],
+                "events_per_node_low": 1,
+                "events_per_node_high": 3,
+                "intensity_low": 0.15,
+                "intensity_high": 0.45,
+                "duration_low": 1.0,
+                "duration_high": 6.0,
+            },
+            "utility": {
+                "type_weights": [0.30, 0.30, 0.25, 0.15],
+                "events_per_node_low": 4,
+                "events_per_node_high": 10,
+                "intensity_low": 0.35,
+                "intensity_high": 0.85,
+                "duration_low": 1.0,
+                "duration_high": 16.0,
+            },
+            "stressed": {
+                "type_weights": [0.25, 0.25, 0.30, 0.20],
+                "events_per_node_low": 5,
+                "events_per_node_high": 12,
+                "intensity_low": 0.40,
+                "intensity_high": 0.95,
+                "duration_low": 1.5,
+                "duration_high": 20.0,
+            },
+        }
+        return profile_settings.get(realism_profile, profile_settings["utility"])
     
     def __init__(self, load_manager):
         """
@@ -391,12 +433,7 @@ class NTLInjectionEngine:
         if affected_nodes is None:
             affected_nodes = list(self.load_manager.node_profiles.keys())
 
-        profile_settings = {
-            "benchmark": {"load_shedding": 0.20, "rotational_outage": 0.10, "voltage_sag": 0.10, "feeder_trip": 0.05},
-            "utility": {"load_shedding": 0.35, "rotational_outage": 0.20, "voltage_sag": 0.15, "feeder_trip": 0.08},
-            "stressed": {"load_shedding": 0.55, "rotational_outage": 0.25, "voltage_sag": 0.20, "feeder_trip": 0.12},
-        }
-        cfg = profile_settings.get(realism_profile, profile_settings["utility"])
+        cfg = self._get_profile_settings(realism_profile, scenario="operational")
 
         generated_events = []
         for node in affected_nodes:
@@ -522,36 +559,7 @@ class NTLInjectionEngine:
         
         generated_events = []
         
-        profile_settings = {
-            "benchmark": {
-                "type_weights": [0.45, 0.35, 0.15, 0.05],
-                "events_per_node_low": 1,
-                "events_per_node_high": 3,
-                "intensity_low": 0.15,
-                "intensity_high": 0.45,
-                "duration_low": 1.0,
-                "duration_high": 6.0,
-            },
-            "utility": {
-                "type_weights": [0.35, 0.30, 0.20, 0.15],
-                "events_per_node_low": 2,
-                "events_per_node_high": 7,
-                "intensity_low": 0.20,
-                "intensity_high": 0.65,
-                "duration_low": 0.5,
-                "duration_high": 12.0,
-            },
-            "stressed": {
-                "type_weights": [0.25, 0.25, 0.30, 0.20],
-                "events_per_node_low": 2,
-                "events_per_node_high": 8,
-                "intensity_low": 0.20,
-                "intensity_high": 0.70,
-                "duration_low": 1.0,
-                "duration_high": 16.0,
-            },
-        }
-        cfg = profile_settings.get(realism_profile, profile_settings["utility"])
+        cfg = self._get_profile_settings(realism_profile, scenario="theft")
 
         ntl_type_pool = [
             NTLType.PARTIAL_METER_BYPASS,

@@ -513,7 +513,7 @@ class HybridGridDigitalTwin:
             'utility': {
                 'technical_loss_pct_of_source': (3.0, 12.0),
                 'communication_loss_rate_percent': (0.0, 3.0),
-                'ntl_percentage': (0.0, 3.0),
+                'ntl_percentage': (5.0, 9.0),
             },
             'stressed': {
                 'technical_loss_pct_of_source': (5.0, 18.0),

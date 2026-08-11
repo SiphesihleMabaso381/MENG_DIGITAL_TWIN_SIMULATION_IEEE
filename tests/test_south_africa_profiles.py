@@ -76,6 +76,13 @@ class SouthAfricaProfileTests(unittest.TestCase):
         self.assertLess(adjusted["node1"][0], 80.0)
         self.assertLess(adjusted["node2"][0], 90.0)
 
+    def test_utility_profile_uses_stronger_ntl_settings(self):
+        benchmark_cfg = NTLInjectionEngine._get_profile_settings("benchmark", scenario="theft")
+        utility_cfg = NTLInjectionEngine._get_profile_settings("utility", scenario="theft")
+
+        self.assertGreater(utility_cfg["events_per_node_high"], benchmark_cfg["events_per_node_high"])
+        self.assertGreater(utility_cfg["intensity_high"], benchmark_cfg["intensity_high"])
+
     def test_export_results_writes_realism_report(self):
         config = SimulationConfig()
         twin = HybridGridDigitalTwin(config)

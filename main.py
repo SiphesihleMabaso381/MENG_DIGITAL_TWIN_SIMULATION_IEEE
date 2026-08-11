@@ -27,7 +27,6 @@ def _relocate_main_outputs(base_dir: Path, feeder: str = "IEEE13") -> None:
     main_output_dir = base_dir / "results" / "main_ieee"
     main_output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Demo output created by example_with_realistic_profiles()
     demo_profile = base_dir / "results" / "load_profiles.csv"
     if demo_profile.exists():
         demo_dst = main_output_dir / "load_profiles.csv"
@@ -35,7 +34,6 @@ def _relocate_main_outputs(base_dir: Path, feeder: str = "IEEE13") -> None:
             demo_dst.unlink()
         shutil.move(str(demo_profile), str(demo_dst))
 
-    # Full feeder output folder created by example_ieeeXX_simulation()
     feeder_src = base_dir / "results" / f"{feeder.lower()}_example"
     if feeder_src.exists():
         for src_file in feeder_src.iterdir():
@@ -45,7 +43,6 @@ def _relocate_main_outputs(base_dir: Path, feeder: str = "IEEE13") -> None:
                     dst_file.unlink()
                 shutil.move(str(src_file), str(dst_file))
 
-        # Remove source directory if empty after moving files.
         try:
             feeder_src.rmdir()
         except OSError:
@@ -65,7 +62,6 @@ def _show_dashboard(base_dir: Path) -> None:
         return
 
     try:
-        # Import lazily so simulation can run even if matplotlib is unavailable.
         from src.dashboard import render_dashboard
     except Exception as exc:
         local_app_data = os.environ.get("LOCALAPPDATA", "")
@@ -220,7 +216,6 @@ def run() -> int:
             f"Run without --demo to generate full {feeder} outputs and dashboard."
         )
     else:
-        # Also generate standalone load profile export for main.py outputs.
         example_with_realistic_profiles()
         _ensure_main_load_profile_output(project_root)
         feeder_runners[feeder](

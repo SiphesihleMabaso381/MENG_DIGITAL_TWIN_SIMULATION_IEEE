@@ -86,8 +86,8 @@ REALISM_TARGETS = {
         "comm_loss_rate_pct": (0.0, 4.0),
     },
     "utility": {
-        "non_ntl_gap_pct": (0.0, 4.0),
-        "ntl_pct": (0.5, 6.0),
+        "non_ntl_gap_pct": (1.0, 6.0),
+        "ntl_pct": (6.0, 9.0),
         "technical_pct": (3.0, 10.0),
         "comm_loss_rate_pct": (0.0, 2.0),
     },
