@@ -1,0 +1,89 @@
+Proposed framework for NTL detection
+
+Simple title idea:
+Multi-Agent Federated Physics-Informed Digital Twin Framework for Explainable NTL Detection
+
+Main idea:
+Build a new NTL detection system that is not only based on AI prediction, but also uses several intelligent agents to check data, physics, digital-twin behaviour, and explainability before making a final decision.
+
+The core thinking:
+Instead of saying a model is suspicious, the system should explain why it is suspicious and whether that explanation is physically realistic.
+
+Main components:
+1. Local Data Agent
+   - Reads feeder and customer data locally.
+   - Collects consumption behaviour, meter status, time trends, and operational context.
+   - Prepares clean inputs for the rest of the framework.
+
+2. Physics Agent
+   - Checks whether the observed pattern is physically possible.
+   - Uses power-flow logic, voltage behaviour, feeder topology, and network constraints.
+   - Helps reject unrealistic alerts caused by noise or poor data.
+
+3. Anomaly Agent
+   - Detects possible NTL-related behaviour.
+   - Uses data-driven learning to find unusual consumption, temporal, and pattern-based deviations.
+   - Produces an initial suspicion score for possible NTL activity.
+
+4. Explainability Agent
+   - Explains the reason for the alert.
+   - Shows the evidence used to reach the decision, such as abnormal usage patterns, physical inconsistency, or simulation support.
+   - Makes the decision interpretable to utility engineers and managers.
+
+5. Digital Twin Agent
+   - Simulates the feeder with and without an NTL condition.
+   - Compares the simulation result with real observations.
+   - Uses counterfactual reasoning to test whether the anomaly is better explained by NTL or by normal variation.
+
+6. Coordination Agent
+   - Combines all evidence into one final decision.
+   - Produces a trust-based NTL score using data confidence, physics consistency, anomaly strength, and digital-twin support.
+   - Sends the final alert and explanation to the utility decision layer.
+
+How it works:
+- Each local feeder or utility node learns from its own data.
+- The system shares only useful knowledge, not raw sensitive data.
+- The final decision is based on evidence from data, physics, and simulation.
+- The output is not just a yes/no label, but an explainable and trusted decision.
+- The framework can support both detection and investigation by showing why an event is suspicious.
+
+Why it is strong:
+- Better privacy protection
+- Better explainability
+- Better physical consistency
+- Lower false alarms
+- Stronger utility trust and revenue assurance
+- Better support for operational decision-making
+
+Simple research positioning:
+The proposed contribution is a unified multi-agent methodology for NTL detection that combines federated learning, explainable AI, physics-informed reasoning, and digital-twin validation into one auditable decision framework for hybrid distribution networks.
+
+More detailed architectural view:
+
+Real feeder data
+      │
+      ▼
+Local Data Agent
+      │
+   ┌──► Anomaly Agent ───┐
+   │                     │
+   ├──► Physics Agent ───┤
+   │                     │
+   └──► Digital Twin Agent
+           │
+           ▼
+    Coordination Agent
+           │
+           ▼
+   Explainability Agent
+           │
+           ▼
+   Final NTL Decision
+
+Possible output of the system:
+- NTL suspicion score
+- Evidence summary
+- Physics consistency score
+- Digital-twin support score
+- Explanation for the utility team
+
