@@ -1,6 +1,6 @@
 Proposed framework for NTL detection
 
-Simple title idea:
+Simple architectural implementation :
 Multi-Agent Federated Physics-Informed Digital Twin Framework for Explainable NTL Detection
 
 Main idea:
