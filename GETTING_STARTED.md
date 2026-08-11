@@ -73,6 +73,8 @@ Typical files:
 - results/main_ieee/ntl_statistics.csv
 - results/main_ieee/simulation_config.json
 - results/main_ieee/realism_report.csv
+- results/main_ieee/sensitivity_report.csv
+- results/main_ieee/labeling_ready.csv
 - results/main_ieee/load_profiles.csv
 - results/main_ieee/dashboard.png
 
@@ -105,4 +107,4 @@ python main.py --feeder IEEE13 --realism-profile utility --seed 42 --no-strict-r
 
 Open the generated outputs in results/main_ieee and review the dashboard, realism report, and NTL statistics.
 
-This project is currently a strong prototype for research and presentation, and it is designed to evolve into a more data-rich model as real utility datasets become available.
+This project is currently a strong prototype for research and presentation, and it is designed to evolve into a more data-rich model as real utility datasets become available. It also now includes sensitivity reporting and a labeling-ready dataset for future analytics and machine-learning-oriented workflows.

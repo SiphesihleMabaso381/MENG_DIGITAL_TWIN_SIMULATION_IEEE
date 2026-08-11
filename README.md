@@ -19,7 +19,8 @@ The current implementation is best viewed as a research and demonstration protot
 - Hybrid smart and legacy meter modeling
 - South Africa-inspired customer behavior and demand shapes
 - Separate handling of operational disturbances and theft/NTL events
-- Export of simulation results, NTL statistics, and realism summaries
+- Export of main simulation results, NTL statistics, realism summaries, sensitivity reports, and labeling-ready datasets
+- Explainability summaries and benchmarking-style reporting for research use
 - Automatic dashboard generation and saving to results/main_ieee/dashboard.png
 - Optional future integration with real AMI, SCADA, and GIS data
 
@@ -93,6 +94,8 @@ Full runs write consolidated outputs to results/main_ieee:
 - ntl_statistics.csv
 - simulation_config.json
 - realism_report.csv
+- sensitivity_report.csv
+- labeling_ready.csv
 - load_profiles.csv
 - dashboard.png
 

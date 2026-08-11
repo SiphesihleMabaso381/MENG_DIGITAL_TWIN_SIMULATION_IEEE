@@ -15,7 +15,7 @@ The project helps users:
 - test meter behavior and communication issues,
 - simulate non-technical losses such as theft or bypassing,
 - separate those losses from operational problems like load shedding,
-- and generate charts and reports that are easy to explain.
+- and generate charts, reports, and analysis-ready datasets that are easy to explain.
 
 Why it matters
 --------------
@@ -30,7 +30,7 @@ The current version can:
 - simulate measurement errors and communication loss,
 - add load-shedding or outage-type events,
 - inject NTL-style scenarios,
-- and export the results to CSV and image files.
+- and export results to CSV and image files, including realism, sensitivity, and labeling-ready outputs.
 
 Why this version is relevant to South Africa
 -------------------------------------------
@@ -52,8 +52,8 @@ The code is split into separate parts so each task has a clear role:
 
 How realistic is it?
 ---------------------
-The model is still based on synthetic and benchmark-style data, so it is not yet a full replacement for real utility operations. However, it is realistic enough to support research, education, and demonstration work.
+The model is still based on synthetic and benchmark-style data, so it is not yet a full replacement for real utility operations. However, it is realistic enough to support research, education, presentation, and early-stage analytics workflows.
 
 One-line summary
 ----------------
-This project is a practical virtual power-system simulator for learning about feeder behavior, metering quality, and NTL analysis in a South Africa-inspired context.
+This project is a practical virtual power-system simulator for learning about feeder behavior, metering quality, and NTL analysis in a South Africa-inspired context, with exportable reports for research and demonstration use.
