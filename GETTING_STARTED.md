@@ -1,187 +1,108 @@
 # Getting Started with the Hybrid Grid Digital Twin Simulator
 
-## Current Project State
+## Current project state
 
-The project currently runs a physics-based digital twin with strict realism controls for distribution-loss decomposition research.
+The project now runs as a full end-to-end simulation workflow from the terminal or the VS Code Run button. It generates synthetic but realistic feeder, load, and metering results, then writes them into results/main_ieee and opens the dashboard automatically after a full run.
 
-What it now does by default:
-
-- Runs full feeder simulation (IEEE13 by default) through OpenDSS
-- Uses hybrid metering (smart plus legacy) with measurement error and communication behavior
-- Injects NTL scenarios stochastically using feeder-wide prevalence sampling
-- Exports unified outputs to [results/main_ieee](results/main_ieee)
-- Renders and saves dashboard image to [results/main_ieee/dashboard.png](results/main_ieee/dashboard.png)
-- Supports strict realism calibration retries and optional hard enforcement
-
-## Quick Setup
+## Quick setup
 
 ### 1. Install dependencies
 
+From the project root:
+
 ```powershell
-cd "c:\Users\Simabaso\OneDrive - Shoprite Checkers (Pty) Limited\Desktop\MENG_DIGITAL_TWIN_SIMULATION_IEEE"
 .\setup.ps1
 ```
 
-This creates the environment outside OneDrive by default:
+This creates or updates the local Python environment for the project.
 
-- %LOCALAPPDATA%\venvs\MENG_DIGITAL_TWIN_SIMULATION_IEEE
+### 2. Make sure the feeder files are available
 
-Activate manually when needed:
+The repository already includes IEEE feeder content under the ieee_feeders folder. If needed, verify that the expected .dss entry files are present.
 
-```powershell
-& "$env:LOCALAPPDATA\venvs\MENG_DIGITAL_TWIN_SIMULATION_IEEE\Scripts\Activate.ps1"
-```
+### 3. Run the project
 
-### 2. Ensure IEEE feeders are available
-
-Place extracted IEEE 13/34/123 feeder folders under [ieee_feeders](ieee_feeders).
-
-### 3. Run with strict realism (recommended)
+Recommended starter command:
 
 ```powershell
-python main.py --feeder IEEE13 --realism-profile utility --random-seed --strict-realism --max-calibration-attempts 12
+python main.py --feeder IEEE13 --realism-profile utility --seed 42 --no-strict-realism
 ```
 
-This command is the recommended high-realism execution path.
+This is a good default run for a quick test because it is deterministic and completes reliably.
 
-## Common Commands
+## Common commands
 
-### Default full run
+### Full run
 
 ```powershell
 python main.py
 ```
 
-### Demo-only run
+### Demo run
 
 ```powershell
 python main.py --demo
 ```
 
-### Alternate feeders
+### Alternative feeders
 
 ```powershell
-python main.py --feeder IEEE34 --realism-profile utility --random-seed --strict-realism
-python main.py --feeder IEEE123 --realism-profile utility --random-seed --strict-realism
+python main.py --feeder IEEE34 --realism-profile utility --seed 42 --no-strict-realism
+python main.py --feeder IEEE123 --realism-profile utility --seed 42 --no-strict-realism
 ```
 
-### Disable strict realism
-
-```powershell
-python main.py --feeder IEEE13 --realism-profile utility --random-seed --no-strict-realism
-```
-
-## CLI Options in Main Flow
+## CLI options
 
 - --demo
 - --feeder IEEE13|IEEE34|IEEE123
 - --realism-profile benchmark|utility|stressed
 - --seed <int>
 - --random-seed
-- --strict-realism
-- --no-strict-realism
+- --strict-realism / --no-strict-realism
 - --max-calibration-attempts <int>
+- --region south_africa|global
 
-## Output Files
+## Output files
 
-After full runs, the main consolidated output folder is [results/main_ieee](results/main_ieee).
+After a full run, the consolidated outputs are placed in results/main_ieee.
 
 Typical files:
 
-- [results/main_ieee/simulation_results.csv](results/main_ieee/simulation_results.csv)
-- [results/main_ieee/ntl_events.csv](results/main_ieee/ntl_events.csv)
-- [results/main_ieee/ntl_statistics.csv](results/main_ieee/ntl_statistics.csv)
-- [results/main_ieee/simulation_config.json](results/main_ieee/simulation_config.json)
-- [results/main_ieee/load_profiles.csv](results/main_ieee/load_profiles.csv)
-- [results/main_ieee/dashboard.png](results/main_ieee/dashboard.png)
+- results/main_ieee/simulation_results.csv
+- results/main_ieee/ntl_events.csv
+- results/main_ieee/ntl_statistics.csv
+- results/main_ieee/simulation_config.json
+- results/main_ieee/realism_report.csv
+- results/main_ieee/load_profiles.csv
+- results/main_ieee/dashboard.png
 
-## Realism Model Notes
+## Notes on realism
 
-### Strict realism calibration
-
-When strict realism is enabled, simulation attempts are retried until profile target bands are met, otherwise the run fails.
-
-Current utility profile targets:
-
-- Non-NTL meter/data gap: 0.0% to 1.5%
-- NTL share: 0.5% to 6.0%
-- Technical loss (source-based): 3.0% to 10.0%
-- Communication loss rate: 0.0% to 2.0%
-
-### NTL injection behavior
-
-NTL is not fixed to a small hard-coded number of nodes. It is sampled through feeder-wide prevalence and event stochasticity, so affected nodes can vary run-to-run and may involve any subset of customers.
-
-### Communication loss behavior
-
-Metering includes both dropout and recovery/backfill behavior to better reflect settled-data workflows.
-
-## Recommended Research Practice
-
-Use repeated Monte Carlo style runs with random seeds and summarize distributions, not single-run values.
-
-Example:
-
-```powershell
-python main.py --feeder IEEE13 --realism-profile utility --random-seed --strict-realism --max-calibration-attempts 12
-```
-
-Repeat this command across multiple runs and compare KPI bands from exported CSVs.
+The simulator deliberately separates operational disturbances from NTL events. This makes it easier to distinguish:
+- load shedding or outages,
+- meter behavior issues,
+- and theft-like patterns.
 
 ## Troubleshooting
 
-### Matplotlib or ft2font issues in OneDrive environment
+### Dashboard or plotting issues
 
-Use the external environment under %LOCALAPPDATA%\venvs. The launcher already includes fallback rendering logic.
+If plotting fails, the launcher will try the external Python environment in the local AppData venv path. If the error persists, make sure the plotting dependencies are installed.
 
 ### Missing feeder files
 
-Ensure feeder folders and entry files exist under [ieee_feeders](ieee_feeders).
+Make sure the expected IEEE feeder entry files exist under ieee_feeders.
 
-### Strict realism run fails
+### Strict realism failures
 
-Increase attempts first:
+If a strict-realism run fails, try a slightly smaller target or disable strict mode for exploratory runs:
 
 ```powershell
-python main.py --feeder IEEE13 --realism-profile utility --random-seed --strict-realism --max-calibration-attempts 20
+python main.py --feeder IEEE13 --realism-profile utility --seed 42 --no-strict-realism
 ```
 
-If still failing, switch profile or temporarily disable strict mode for exploratory runs.
+## Suggested next step
 
-## Next Step
+Open the generated outputs in results/main_ieee and review the dashboard, realism report, and NTL statistics.
 
-For full details, architecture, and module-level API examples, use [README.md](README.md).
-4. Validate on production-like scenarios
-5. Publish research findings
-
----
-
-## Final Notes
-
-You now have a **world-class simulation framework** that many academic researchers do not. Most publications rely on synthetic or unrealistic data. Your simulator bridges this gap with:
-
-- **95%+ real-world fidelity**
-- **Hybrid metering realism** (smart + legacy)
-- **Federated learning readiness**
-- **Publication-quality code**
-- **Modular extensibility**
-
-This is a strong foundation for impactful research on NTL detection and mitigation. The architecture supports seamless transition from synthetic to real data, positioning your work for both academic rigor and practical deployment.
-
----
-
-## Questions?
-
-Refer to:
-1. **How to use module X?** → `src/X.py` docstrings + `example_simulation.py`
-2. **How to configure?** → `config/simulation_config.yaml`
-3. **Architecture overview?** → `README.md` "Architecture" section
-4. **Troubleshooting?** → `README.md` "Troubleshooting" section
-
----
-
-**Good luck with your research! 🚀**
-
-*Project created: June 2024*  
-*Version: 1.0.0*  
-*Status: Production Ready*
+This project is currently a strong prototype for research and presentation, and it is designed to evolve into a more data-rich model as real utility datasets become available.

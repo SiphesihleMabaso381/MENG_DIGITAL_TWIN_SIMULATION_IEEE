@@ -1,40 +1,36 @@
 # Future Data Layer
 
-This project is structured so real utility datasets can be added later without changing the core simulation engine.
+This project is already structured so real utility data can be integrated later without replacing the core simulation logic.
 
-## What will be added later
+## Current status
 
-- SCADA data
-- AMI smart meter history
-- GIS network map data
+At the moment the simulator relies on synthetic and benchmark-style data because institutional access to real utility datasets is not yet available. That is intentional and keeps the project reproducible and transparent.
 
-## Current rule
+## Planned upgrade path
 
-The simulation must keep working with synthetic and benchmark data even if no real utility data is present.
+The intended staged pathway is:
 
-## Where real data should go
+1. AMI integration for customer meter history
+2. SCADA integration for feeder status and operating conditions
+3. GIS integration for feeder and customer mapping
+4. Calibration against real measurements and event logs
 
-- `data/inputs/scada/scada.csv`
-- `data/inputs/ami/ami.csv`
-- `data/inputs/gis/gis.csv`
+## Where future data should go
 
-## How the code should use it
+Optional input files can be placed under:
 
-The simulation core should not read raw utility files directly.
-Instead, it should use a small adapter layer that:
+- data/inputs/scada/scada.csv
+- data/inputs/ami/ami.csv
+- data/inputs/gis/gis.csv
 
-1. checks whether real data exists
-2. loads it if available
-3. falls back to synthetic data if it is not available
+## Design principle
 
-## Why this is safe
+The simulation core should continue to work even when real data is absent. In that case it should fall back to the existing synthetic model.
 
-This keeps the current code stable.
-It means adding real datasets later will mostly change the data layer, not the full simulation logic.
+## Why this is useful
 
-## Suggested future integration order
+This approach keeps the current project useful while making it easier to evolve toward more realistic utility-grade analysis once access to real datasets becomes available.
 
-1. SCADA adapter for feeder status and voltage measurements
-2. AMI adapter for customer meter readings
-3. GIS adapter for network location and feeder mapping
-4. Validation step to compare real data against simulation outputs
+## Expected outcome
+
+Once real data is integrated, the same simulation framework can be used for more accurate calibration, better anomaly detection, and stronger comparison between synthetic and observed system behavior.
