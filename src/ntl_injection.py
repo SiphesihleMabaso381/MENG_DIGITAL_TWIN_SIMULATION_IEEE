@@ -369,7 +369,7 @@ class NTLInjectionEngine:
                                   duration_hours: float, intensity: float,
                                   description: str = ""):
         """Schedule a non-theft operational event such as load shedding or outage."""
-        self.operational_events.append({
+        event = {
             'node_name': node_name,
             'event_type': event_type,
             'start_day': start_day,
@@ -377,7 +377,48 @@ class NTLInjectionEngine:
             'duration_hours': duration_hours,
             'intensity': float(intensity),
             'description': description or f"{event_type} at {node_name}",
-        })
+        }
+        self.operational_events.append(event)
+        return event
+
+    def generate_realistic_operational_scenarios(
+        self,
+        sim_duration_days: int = 30,
+        realism_profile: str = "utility",
+        affected_nodes: Optional[List[str]] = None,
+    ) -> List[Dict]:
+        """Generate realistic operational disturbances separate from theft scenarios."""
+        if affected_nodes is None:
+            affected_nodes = list(self.load_manager.node_profiles.keys())
+
+        profile_settings = {
+            "benchmark": {"load_shedding": 0.20, "rotational_outage": 0.10, "voltage_sag": 0.10, "feeder_trip": 0.05},
+            "utility": {"load_shedding": 0.35, "rotational_outage": 0.20, "voltage_sag": 0.15, "feeder_trip": 0.08},
+            "stressed": {"load_shedding": 0.55, "rotational_outage": 0.25, "voltage_sag": 0.20, "feeder_trip": 0.12},
+        }
+        cfg = profile_settings.get(realism_profile, profile_settings["utility"])
+
+        generated_events = []
+        for node in affected_nodes:
+            for event_type, probability in cfg.items():
+                if np.random.random() < probability:
+                    start_day = int(np.random.randint(1, max(2, sim_duration_days + 1)))
+                    start_hour = float(np.random.randint(0, 24))
+                    duration = float(np.random.uniform(1.0, 6.0))
+                    intensity = float(np.random.uniform(0.15, 0.95))
+                    event = self.schedule_operational_event(
+                        node_name=node,
+                        event_type=event_type,
+                        start_day=start_day,
+                        start_hour=start_hour,
+                        duration_hours=duration,
+                        intensity=intensity,
+                        description=f"{event_type} at {node}",
+                    )
+                    generated_events.append(event)
+
+        logger.info(f"Generated {len(generated_events)} realistic operational disturbance events")
+        return generated_events
 
     def generate_south_africa_load_shedding_scenarios(
         self,

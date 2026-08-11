@@ -233,7 +233,8 @@ class Meter:
                 communication_loss = np.random.random() > self.characteristics.communication_reliability
         
         # Clock offset affects timestamp
-        timestamp_offset_sec = self.clock_offset_seconds
+        drift_scale = self.data_quality_profile.get("clock_drift_scale", 0.0)
+        timestamp_offset_sec = self.clock_offset_seconds + drift_scale * 60.0
         
         # Generate tamper flag if tamper is detected and meter supports it
         tamper_flag = False

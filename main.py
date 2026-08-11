@@ -119,9 +119,9 @@ def _show_dashboard(base_dir: Path) -> None:
     render_dashboard(
         results_dir=str(results_dir),
         save_path=str(dashboard_image),
-        show=False,
+        show=True,
     )
-    print(f"Dashboard generated at: {dashboard_image}")
+    print(f"Dashboard generated and opened at: {dashboard_image}")
 
 
 def _ensure_main_load_profile_output(base_dir: Path) -> None:

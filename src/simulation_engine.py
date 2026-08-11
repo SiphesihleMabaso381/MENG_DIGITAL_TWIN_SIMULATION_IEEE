@@ -9,7 +9,7 @@ Author: MENG Digital Twin Simulation
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Callable
+from typing import Dict, List, Optional, Callable, Tuple
 from datetime import datetime, timedelta
 import logging
 from pathlib import Path
@@ -78,6 +78,8 @@ class HybridGridDigitalTwin:
         
         self.simulation_results = []
         self.is_running = False
+        self._feeder_baseline_kw = 0.0
+        self._feeder_realism_state = {}
         
         np.random.seed(config.seed)
         
@@ -144,6 +146,43 @@ class HybridGridDigitalTwin:
             return False
         return True
 
+    def _apply_feeder_realism(self, metered_loads: Dict[str, Tuple[float, float]], day: int, hour: float) -> Dict[str, Tuple[float, float]]:
+        """Apply simple feeder-level realism to make synthetic loads behave more like a stressed distribution network."""
+        adjusted = {}
+        baseline_kw = max(sum(p for p, _ in metered_loads.values()), 1.0)
+        self._feeder_baseline_kw = baseline_kw
+
+        if hour >= 18.0:
+            stress_factor = 0.92
+        elif hour <= 6.0:
+            stress_factor = 0.98
+        else:
+            stress_factor = 0.97
+
+        for node_name, (p_kw, q_kvar) in metered_loads.items():
+            prior_state = self._feeder_realism_state.get(node_name, 0.0)
+            node_stress = stress_factor * (1.0 + 0.002 * max(prior_state, 0.0))
+            if node_name.endswith(("1", "2", "3")):
+                node_stress *= 0.995
+            if day >= 4:
+                node_stress *= 0.995
+
+            adjusted[node_name] = (p_kw * node_stress, q_kvar * node_stress)
+
+        return adjusted
+
+    def _compute_calibration_summary(self, metered_loads: Dict[str, Tuple[float, float]], actual_loads: Dict[str, Tuple[float, float]]) -> Dict[str, float]:
+        """Provide simple calibration targets for synthetic realism without real data."""
+        total_metered = sum(p for p, _ in metered_loads.values())
+        total_actual = sum(p for p, _ in actual_loads.values())
+        gap_pct = ((total_actual - total_metered) / max(total_actual, 1e-9)) * 100.0 if total_actual > 0 else 0.0
+        return {
+            "metered_load_kw": float(total_metered),
+            "actual_load_kw": float(total_actual),
+            "gap_pct": float(gap_pct),
+            "stress_factor": float(self._feeder_baseline_kw / max(total_metered, 1e-9)) if total_metered > 0 else 1.0,
+        }
+
     def run_simulation(self, progress_callback: Optional[Callable] = None) -> pd.DataFrame:
         """
         Run complete digital twin simulation.
@@ -179,6 +218,13 @@ class HybridGridDigitalTwin:
                     metered_loads = {}
                     for node_name, ntl_data in all_ntl_data.items():
                         metered_loads[node_name] = ntl_data['metered_power']
+
+                    # Apply feeder-level realism so synthetic feeder behavior is more realistic.
+                    metered_loads = self._apply_feeder_realism(metered_loads, day=day, hour=hour)
+                    calibration_summary = self._compute_calibration_summary(metered_loads, {k: v['actual_power'] for k, v in all_ntl_data.items()})
+                    for node_name in metered_loads:
+                        prior_state = self._feeder_realism_state.get(node_name, 0.0)
+                        self._feeder_realism_state[node_name] = float(min(5.0, prior_state + max(0.0, calibration_summary["gap_pct"] / 100.0)))
                     
                     # Set load profile in OpenDSS
                     for node_name, (p_kw, q_kvar) in metered_loads.items():
@@ -209,6 +255,7 @@ class HybridGridDigitalTwin:
                         'actual_total_kw': actual_total_kw,
                         'meter_readings': meter_readings,
                         'ntl_data': all_ntl_data,
+                        'calibration_summary': calibration_summary,
                     }
                     
                     self.simulation_results.append(snapshot)
@@ -253,6 +300,9 @@ class HybridGridDigitalTwin:
                 meter_df['source_p_kw'] = snapshot.get('source_p_kw', np.nan)
                 meter_df['metered_total_kw'] = snapshot.get('metered_total_kw', np.nan)
                 meter_df['actual_total_kw'] = snapshot.get('actual_total_kw', np.nan)
+                calibration_summary = snapshot.get('calibration_summary', {})
+                meter_df['calibration_gap_pct'] = calibration_summary.get('gap_pct', np.nan)
+                meter_df['calibration_stress_factor'] = calibration_summary.get('stress_factor', np.nan)
                 
                 # Add NTL data
                 for node_name, ntl_data in snapshot['ntl_data'].items():
@@ -305,6 +355,31 @@ class HybridGridDigitalTwin:
         ntl_stats.to_csv(output_path / "ntl_statistics.csv", index=False)
         logger.info("Exported NTL statistics")
 
+        # Export realism report
+        realism_report = self._build_realism_report()
+        realism_report.to_csv(output_path / "realism_report.csv", index=False)
+        logger.info("Exported realism report")
+
+    def _build_realism_report(self) -> pd.DataFrame:
+        """Build a compact summary of realism KPIs for export and downstream analysis."""
+        stats = self.get_summary_statistics()
+        if not stats:
+            return pd.DataFrame(columns=["metric", "value", "unit"])
+
+        report_rows = [
+            {"metric": "total_energy_supplied_kwh", "value": stats.get("total_energy_supplied_kwh", 0.0), "unit": "kWh"},
+            {"metric": "total_energy_metered_kwh", "value": stats.get("total_energy_metered_kwh", 0.0), "unit": "kWh"},
+            {"metric": "total_gap_kwh", "value": stats.get("total_gap_kwh", 0.0), "unit": "kWh"},
+            {"metric": "total_ntl_loss_kwh", "value": stats.get("total_ntl_loss_kwh", 0.0), "unit": "kWh"},
+            {"metric": "metering_data_gap_kwh", "value": stats.get("metering_data_gap_kwh", 0.0), "unit": "kWh"},
+            {"metric": "communication_loss_rate_percent", "value": stats.get("communication_loss_rate_percent", 0.0), "unit": "%"},
+            {"metric": "technical_loss_pct_of_source", "value": stats.get("technical_loss_pct_of_source", 0.0), "unit": "%"},
+            {"metric": "ntl_percentage", "value": stats.get("ntl_percentage", 0.0), "unit": "%"},
+            {"metric": "convergence_rate_percent", "value": stats.get("convergence_rate_percent", 0.0), "unit": "%"},
+            {"metric": "realism_profile", "value": stats.get("profile", self.config.realism_profile), "unit": "-"},
+        ]
+        return pd.DataFrame(report_rows)
+
     def _compute_ntl_statistics(self) -> pd.DataFrame:
         """
         Compute aggregate NTL statistics per node.
@@ -321,17 +396,22 @@ class HybridGridDigitalTwin:
         
         for node_name in results_df['node_name'].unique():
             node_data = results_df[results_df['node_name'] == node_name]
+            energy_series = node_data['energy_kwh'] if 'energy_kwh' in node_data.columns else pd.Series(0.0, index=node_data.index)
+            measured_series = node_data['measured_p_kw'] if 'measured_p_kw' in node_data.columns else pd.Series(0.0, index=node_data.index)
+            ntl_loss_series = node_data['ntl_loss_kw'] if 'ntl_loss_kw' in node_data.columns else pd.Series(0.0, index=node_data.index)
+            ntl_type_series = node_data['ntl_type'] if 'ntl_type' in node_data.columns else pd.Series('None', index=node_data.index)
+            communication_loss_series = node_data['communication_loss'] if 'communication_loss' in node_data.columns else pd.Series(False, index=node_data.index)
             
             stats.append({
                 'Node': node_name,
-                'Meter_Type': node_data['meter_type'].iloc[0] if len(node_data) > 0 else 'unknown',
-                'Total_Energy_kWh': node_data['energy_kwh'].sum(),
-                'Avg_Power_kW': node_data['measured_p_kw'].mean(),
-                'Max_Power_kW': node_data['measured_p_kw'].max(),
-                'Total_NTL_Loss_kWh': node_data['ntl_loss_kw'].sum() * (self.config.time_step_minutes / 60.0),
-                'Avg_NTL_Loss_kW': node_data['ntl_loss_kw'].mean(),
-                'NTL_Events_Count': node_data[node_data['ntl_type'] != 'None'].shape[0],
-                'Data_Quality_Loss_Pct': (node_data['communication_loss'].sum() / len(node_data) * 100) if len(node_data) > 0 else 0,
+                'Meter_Type': node_data['meter_type'].iloc[0] if 'meter_type' in node_data.columns and len(node_data) > 0 else 'unknown',
+                'Total_Energy_kWh': energy_series.sum(),
+                'Avg_Power_kW': measured_series.mean(),
+                'Max_Power_kW': measured_series.max(),
+                'Total_NTL_Loss_kWh': ntl_loss_series.sum() * (self.config.time_step_minutes / 60.0),
+                'Avg_NTL_Loss_kW': ntl_loss_series.mean(),
+                'NTL_Events_Count': ntl_type_series[ntl_type_series != 'None'].shape[0],
+                'Data_Quality_Loss_Pct': (communication_loss_series.sum() / len(node_data) * 100) if len(node_data) > 0 else 0,
             })
         
         return pd.DataFrame(stats)

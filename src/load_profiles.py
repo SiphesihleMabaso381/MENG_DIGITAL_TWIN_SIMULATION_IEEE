@@ -168,7 +168,8 @@ class LoadProfileGenerator:
     def __init__(self, customer_type: CustomerType = CustomerType.RESIDENTIAL,
                  annual_consumption_kwh: float = 4000,
                  south_africa_sector: Optional[SouthAfricaSector] = None,
-                 weather_profile: Optional[WeatherProfile] = None):
+                 weather_profile: Optional[WeatherProfile] = None,
+                 demand_profile: Optional[str] = None):
         """
         Initialize load profile generator.
 
@@ -180,6 +181,7 @@ class LoadProfileGenerator:
         self.annual_consumption_kwh = annual_consumption_kwh
         self.south_africa_sector = south_africa_sector
         self.weather_profile = weather_profile or WeatherProfile.NORMAL
+        self.demand_profile = demand_profile or "standard"
         self._compute_scaling_factor()
         
     def _compute_scaling_factor(self):
@@ -247,6 +249,22 @@ class LoadProfileGenerator:
         seasonal = 1.0 + scale * (base - 1.0)
         return seasonal
 
+    def _apply_demand_shape(self, profile: np.ndarray) -> np.ndarray:
+        """Apply an optional demand-shape modifier for more realistic customer behavior."""
+        profile = profile.copy()
+        if self.demand_profile == "business_hours":
+            profile[8:17] *= 1.08
+            profile[17:20] *= 1.05
+        elif self.demand_profile == "night_shift":
+            profile[0:6] *= 1.05
+            profile[20:24] *= 1.10
+        elif self.demand_profile == "irrigation":
+            profile[5:10] *= 1.12
+            profile[10:15] *= 1.08
+        elif self.demand_profile == "school_hours":
+            profile[6:16] *= 1.06
+        return profile
+
     def _apply_weather_adjustment(self, profile: np.ndarray) -> np.ndarray:
         """Adjust the baseline load profile to mimic simple weather effects."""
         if self.weather_profile == WeatherProfile.HOT:
@@ -279,6 +297,7 @@ class LoadProfileGenerator:
         
         # Combine all factors
         profile = baseline * dow_factor * seasonal_factor * self.scaling_factor
+        profile = self._apply_demand_shape(profile)
         profile = self._apply_weather_adjustment(profile)
         
         return profile
@@ -349,7 +368,8 @@ class NodeLoadProfile:
     def __init__(self, node_name: str, customer_type: CustomerType,
                  annual_consumption_kwh: float, power_factor: float = 0.95,
                  south_africa_sector: Optional[SouthAfricaSector] = None,
-                 weather_profile: Optional[WeatherProfile] = None):
+                 weather_profile: Optional[WeatherProfile] = None,
+                 demand_profile: Optional[str] = None):
         """
         Initialize node load profile.
 
@@ -369,6 +389,7 @@ class NodeLoadProfile:
             annual_consumption_kwh,
             south_africa_sector=south_africa_sector,
             weather_profile=weather_profile,
+            demand_profile=demand_profile,
         )
         
     def get_power_at_time(self, day_of_year: int, hour: float) -> Tuple[float, float]:
@@ -400,7 +421,8 @@ class HybridGridLoadManager:
     def add_load_node(self, node_name: str, customer_type: CustomerType,
                      annual_consumption_kwh: float,
                      south_africa_sector: Optional[SouthAfricaSector] = None,
-                     weather_profile: Optional[WeatherProfile] = None):
+                     weather_profile: Optional[WeatherProfile] = None,
+                     demand_profile: Optional[str] = None):
         """
         Add a load node to the system.
 
@@ -415,6 +437,7 @@ class HybridGridLoadManager:
             annual_consumption_kwh,
             south_africa_sector=south_africa_sector,
             weather_profile=weather_profile,
+            demand_profile=demand_profile,
         )
         self.node_profiles[node_name] = profile
         logger.debug(f"Added load node {node_name} ({customer_type.value})")

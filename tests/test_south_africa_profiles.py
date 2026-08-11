@@ -1,4 +1,8 @@
+import tempfile
 import unittest
+from pathlib import Path
+
+import pandas as pd
 
 from src.hybrid_metering import HybridMeteringSystem
 from src.load_profiles import (
@@ -9,6 +13,7 @@ from src.load_profiles import (
     get_recommended_customer_types,
 )
 from src.ntl_injection import NTLInjectionEngine, NTLType
+from src.simulation_engine import HybridGridDigitalTwin, SimulationConfig
 
 
 class SouthAfricaProfileTests(unittest.TestCase):
@@ -59,6 +64,42 @@ class SouthAfricaProfileTests(unittest.TestCase):
 
         self.assertEqual(result["ntl_type"], NTLType.PARTIAL_METER_BYPASS)
         self.assertEqual(result["operational_event_type"], "load_shedding")
+
+    def test_feeder_realism_reduces_load_under_high_stress(self):
+        config = SimulationConfig()
+        twin = HybridGridDigitalTwin(config)
+        twin._feeder_baseline_kw = 100.0
+
+        metered_loads = {"node1": (80.0, 10.0), "node2": (90.0, 12.0)}
+        adjusted = twin._apply_feeder_realism(metered_loads, day=1, hour=19.0)
+
+        self.assertLess(adjusted["node1"][0], 80.0)
+        self.assertLess(adjusted["node2"][0], 90.0)
+
+    def test_export_results_writes_realism_report(self):
+        config = SimulationConfig()
+        twin = HybridGridDigitalTwin(config)
+        twin.simulation_results = [{
+            'day': 1,
+            'hour': 0.0,
+            'timestep': 0,
+            'convergence': True,
+            'source_p_kw': 10.0,
+            'metered_total_kw': 8.0,
+            'actual_total_kw': 10.0,
+            'meter_readings': pd.DataFrame([
+                {'node_name': 'node1', 'meter_type': 'smart', 'measured_p_kw': 4.0, 'actual_p_kw': 5.0, 'ntl_loss_kw': 1.0}
+            ]),
+            'ntl_data': {},
+            'calibration_summary': {'gap_pct': 2.0, 'stress_factor': 1.1},
+        }]
+        twin.ntl_engine = type('DummyEngine', (), {'export_event_schedule': lambda self: pd.DataFrame()})()
+        twin.metering_system = type('DummyMetering', (), {'get_metering_statistics': lambda self: {'total_meters': 1, 'smart_meters': 1, 'legacy_meters': 0}})()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            twin.export_results(tmpdir)
+            self.assertTrue(Path(tmpdir, 'realism_report.csv').exists())
+            self.assertTrue(Path(tmpdir, 'simulation_results.csv').exists())
 
 
 if __name__ == "__main__":

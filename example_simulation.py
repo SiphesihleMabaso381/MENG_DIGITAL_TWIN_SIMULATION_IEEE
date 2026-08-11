@@ -314,6 +314,11 @@ def _run_feeder_simulation(
             affected_nodes=[node for node, _, _, _ in feeder_loads],
             include_all_stages=True,
         )
+        ntl_engine.generate_realistic_operational_scenarios(
+            sim_duration_days=config.simulation_days,
+            realism_profile=config.realism_profile,
+            affected_nodes=[node for node, _, _, _ in feeder_loads],
+        )
 
         print("\n[Step 6] Running simulation...")
 
