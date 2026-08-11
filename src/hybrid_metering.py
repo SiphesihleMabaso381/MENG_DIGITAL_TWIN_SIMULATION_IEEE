@@ -188,6 +188,7 @@ class Meter:
         missing_reading_probability = self.data_quality_profile.get("missing_reading_probability", 0.0)
         stale_reading_probability = self.data_quality_profile.get("stale_reading_probability", 0.0)
         noise_scale = self.data_quality_profile.get("noise_scale", 0.0)
+        self.measurement_uncertainty_pct = max(0.0, abs(self.measurement_error_factor - 1.0) * 100.0 + noise_scale * 100.0)
 
         if np.random.random() < missing_reading_probability:
             measured_p_out = 0.0
@@ -262,6 +263,16 @@ class Meter:
                 energy_out = 0.0
                 reactive_out = 0.0
 
+        data_quality_flag = "nominal"
+        if communication_loss:
+            data_quality_flag = "communication_loss"
+        if np.random.random() < missing_reading_probability:
+            data_quality_flag = "missing_reading"
+        elif np.random.random() < stale_reading_probability:
+            data_quality_flag = "stale_reading"
+        elif noise_scale > 0.0:
+            data_quality_flag = "noisy"
+
         return {
             'meter_id': self.meter_id,
             'node_name': self.node_name,
@@ -280,6 +291,8 @@ class Meter:
             'measurement_error_factor': self.measurement_error_factor,
             'accuracy_class': self.characteristics.accuracy_class,
             'missing_reading': np.random.random() < missing_reading_probability,
+            'measurement_uncertainty_pct': self.measurement_uncertainty_pct,
+            'data_quality_flag': data_quality_flag,
         }
 
     def inject_tamper(self, tamper_type: str):
@@ -413,6 +426,14 @@ class HybridMeteringSystem:
         self.deploy_meters(smart_nodes, legacy_nodes, meter_profile=meter_profile)
         logger.info(f"Smart meter penetration: {len(smart_nodes)}/{len(self.nodes)} "
                    f"({smart_meter_fraction*100:.1f}%)")
+
+    def set_data_quality_profile(self, profile: Dict[str, float]) -> None:
+        """Set a shared profile for meter data-quality imperfections."""
+        self.data_quality_profile = {
+            "missing_reading_probability": float(profile.get("missing_reading_probability", 0.0)),
+            "stale_reading_probability": float(profile.get("stale_reading_probability", 0.0)),
+            "noise_scale": float(profile.get("noise_scale", 0.0)),
+        }
 
     def record_all_measurements(self, node_power_map: Dict[str, Tuple[float, float]],
                                time_interval_minutes: float = 15) -> pd.DataFrame:

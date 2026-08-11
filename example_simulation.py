@@ -24,6 +24,7 @@ from src.load_profiles import (
 )
 from src.ntl_injection import NTLInjectionEngine, NTLType
 from src.simulation_engine import HybridGridDigitalTwin, SimulationConfig
+from src.data_sources import load_optional_utility_data
 
 
 FEEDER_ENTRY_FILES = {
@@ -278,6 +279,8 @@ def _run_feeder_simulation(
 
         print("\n[Step 3] Creating digital twin...")
         digital_twin = HybridGridDigitalTwin(config)
+        data_bundle = load_optional_utility_data(Path(__file__).resolve().parent)
+        digital_twin.attach_data_bundle(data_bundle)
         digital_twin.setup_feeder(opendss)
 
         load_manager = HybridGridLoadManager()

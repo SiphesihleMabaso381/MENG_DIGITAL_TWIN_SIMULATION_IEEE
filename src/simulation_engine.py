@@ -15,6 +15,8 @@ import logging
 from pathlib import Path
 import json
 
+from .data_sources import UtilityDataBundle
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,11 @@ class SimulationConfig:
         self.ntl_intensity_range: tuple = (0.2, 0.6)
         self.seed: int = 42
         self.realism_profile: str = "benchmark"
+        self.feeder_realism_evening_factor: float = 0.92
+        self.feeder_realism_night_factor: float = 0.98
+        self.feeder_realism_day_factor: float = 0.97
+        self.feeder_realism_sensitivity: float = 0.002
+        self.data_source_bundle: Optional[UtilityDataBundle] = None
         
     def to_dict(self) -> Dict:
         """Convert configuration to dictionary."""
@@ -45,6 +52,10 @@ class SimulationConfig:
             'ntl_intensity_range': self.ntl_intensity_range,
             'seed': self.seed,
             'realism_profile': self.realism_profile,
+            'feeder_realism_evening_factor': self.feeder_realism_evening_factor,
+            'feeder_realism_night_factor': self.feeder_realism_night_factor,
+            'feeder_realism_day_factor': self.feeder_realism_day_factor,
+            'feeder_realism_sensitivity': self.feeder_realism_sensitivity,
         }
 
     @staticmethod
@@ -75,6 +86,7 @@ class HybridGridDigitalTwin:
         self.load_manager = None
         self.metering_system = None
         self.ntl_engine = None
+        self.data_source_bundle = None
         
         self.simulation_results = []
         self.is_running = False
@@ -146,26 +158,46 @@ class HybridGridDigitalTwin:
             return False
         return True
 
+    def attach_data_bundle(self, data_bundle: Optional[UtilityDataBundle]) -> None:
+        """Attach an optional utility-data bundle for future real-world integration."""
+        self.data_source_bundle = data_bundle
+
+    def _get_data_source_summary(self) -> Dict[str, object]:
+        """Summarize whether optional real-world datasets are available."""
+        if self.data_source_bundle is None:
+            return {"real_data_available": False, "available_sources": [], "source_count": 0}
+
+        available_sources = []
+        for source_name, frame in (("scada", self.data_source_bundle.scada), ("ami", self.data_source_bundle.ami), ("gis", self.data_source_bundle.gis)):
+            if frame is not None and not frame.empty:
+                available_sources.append(source_name)
+
+        return {
+            "real_data_available": bool(available_sources),
+            "available_sources": available_sources,
+            "source_count": len(available_sources),
+        }
+
     def _apply_feeder_realism(self, metered_loads: Dict[str, Tuple[float, float]], day: int, hour: float) -> Dict[str, Tuple[float, float]]:
-        """Apply simple feeder-level realism to make synthetic loads behave more like a stressed distribution network."""
+        """Apply configurable feeder-level realism to make synthetic loads behave more like a stressed distribution network."""
         adjusted = {}
         baseline_kw = max(sum(p for p, _ in metered_loads.values()), 1.0)
         self._feeder_baseline_kw = baseline_kw
 
         if hour >= 18.0:
-            stress_factor = 0.92
+            stress_factor = self.config.feeder_realism_evening_factor
         elif hour <= 6.0:
-            stress_factor = 0.98
+            stress_factor = self.config.feeder_realism_night_factor
         else:
-            stress_factor = 0.97
+            stress_factor = self.config.feeder_realism_day_factor
 
         for node_name, (p_kw, q_kvar) in metered_loads.items():
             prior_state = self._feeder_realism_state.get(node_name, 0.0)
-            node_stress = stress_factor * (1.0 + 0.002 * max(prior_state, 0.0))
+            node_stress = stress_factor * (1.0 + self.config.feeder_realism_sensitivity * max(prior_state, 0.0))
             if node_name.endswith(("1", "2", "3")):
                 node_stress *= 0.995
             if day >= 4:
-                node_stress *= 0.995
+                node_stress *= 1.0 - 0.005 * min(day - 3, 3)
 
             adjusted[node_name] = (p_kw * node_stress, q_kvar * node_stress)
 
@@ -360,8 +392,16 @@ class HybridGridDigitalTwin:
         realism_report.to_csv(output_path / "realism_report.csv", index=False)
         logger.info("Exported realism report")
 
+        sensitivity_report = self._build_sensitivity_report()
+        sensitivity_report.to_csv(output_path / "sensitivity_report.csv", index=False)
+        logger.info("Exported sensitivity report")
+
+        labeling_frame = self._build_labeling_ready_dataframe(results_df)
+        labeling_frame.to_csv(output_path / "labeling_ready.csv", index=False)
+        logger.info("Exported labeling-ready dataset")
+
     def _build_realism_report(self) -> pd.DataFrame:
-        """Build a compact summary of realism KPIs for export and downstream analysis."""
+        """Build a compact summary of realism KPIs and benchmark metadata for export and downstream analysis."""
         stats = self.get_summary_statistics()
         if not stats:
             return pd.DataFrame(columns=["metric", "value", "unit"])
@@ -378,6 +418,25 @@ class HybridGridDigitalTwin:
             {"metric": "convergence_rate_percent", "value": stats.get("convergence_rate_percent", 0.0), "unit": "%"},
             {"metric": "realism_profile", "value": stats.get("profile", self.config.realism_profile), "unit": "-"},
         ]
+
+        data_source_summary = self._get_data_source_summary()
+        report_rows.append({"metric": "real_data_available", "value": int(data_source_summary["real_data_available"]), "unit": "bool"})
+        report_rows.append({"metric": "data_source_count", "value": data_source_summary["source_count"], "unit": "count"})
+        report_rows.append({"metric": "data_sources_available", "value": ",".join(data_source_summary["available_sources"]) if data_source_summary["available_sources"] else "synthetic", "unit": "-"})
+
+        target_ranges = self._get_realism_targets_for_profile()
+        for key, (low, high) in target_ranges.items():
+            report_rows.append({"metric": f"benchmark_{key}_low", "value": low, "unit": "%"})
+            report_rows.append({"metric": f"benchmark_{key}_high", "value": high, "unit": "%"})
+
+        benchmark_status = "inside_target_range"
+        for key, (low, high) in target_ranges.items():
+            value = float(stats.get(key, 0.0))
+            if not (low <= value <= high):
+                benchmark_status = "outside_target_range"
+                break
+        report_rows.append({"metric": "benchmark_status", "value": benchmark_status, "unit": "-"})
+        report_rows.append({"metric": "benchmark_profile", "value": self.config.realism_profile, "unit": "-"})
         return pd.DataFrame(report_rows)
 
     def _compute_ntl_statistics(self) -> pd.DataFrame:
@@ -501,10 +560,10 @@ class HybridGridDigitalTwin:
             'num_timesteps': len(results_df),
         }
 
-    def _evaluate_realism_kpis(self, stats: Dict) -> List[str]:
-        """Return KPI status lines compared to profile-specific expected ranges."""
-        profile = stats.get('profile', 'benchmark')
-        ranges = {
+    def _get_realism_targets_for_profile(self) -> Dict[str, Tuple[float, float]]:
+        """Return the expected benchmark ranges for the current realism profile."""
+        profile = self.config.realism_profile
+        return {
             'benchmark': {
                 'technical_loss_pct_of_source': (2.0, 8.0),
                 'communication_loss_rate_percent': (0.0, 6.0),
@@ -521,6 +580,95 @@ class HybridGridDigitalTwin:
                 'ntl_percentage': (0.0, 6.0),
             },
         }.get(profile, {})
+
+    def _build_sensitivity_report(self) -> pd.DataFrame:
+        """Create a lightweight sensitivity report for benchmarking and calibration comparisons."""
+        stats = self.get_summary_statistics()
+        if not stats:
+            return pd.DataFrame(columns=["metric", "value", "unit"])
+
+        rows = [
+            {"metric": "sensitivity_gap_pct", "value": stats.get("total_gap_kwh", 0.0) / max(stats.get("total_energy_supplied_kwh", 1.0), 1.0) * 100.0, "unit": "%"},
+            {"metric": "sensitivity_ntl_pct", "value": stats.get("ntl_percentage", 0.0), "unit": "%"},
+            {"metric": "sensitivity_comm_pct", "value": stats.get("communication_loss_rate_percent", 0.0), "unit": "%"},
+        ]
+        return pd.DataFrame(rows)
+
+    def _build_labeling_ready_dataframe(self, results_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+        """Create a compact labeling-ready dataset for future supervised learning workflows."""
+        if results_df is None:
+            results_df = self._compile_results_dataframe()
+        if results_df.empty:
+            return pd.DataFrame(columns=["node_name", "scenario_label", "confidence_score", "reason_code"])
+
+        def _get_series(column_name: str, default_value):
+            if column_name in results_df.columns:
+                return results_df[column_name]
+            return pd.Series([default_value] * len(results_df), index=results_df.index)
+
+        label_frame = pd.DataFrame({
+            "node_name": _get_series("node_name", "unknown"),
+            "actual_p_kw": _get_series("actual_p_kw", 0.0),
+            "measured_p_kw": _get_series("measured_p_kw", 0.0),
+            "ntl_loss_kw": _get_series("ntl_loss_kw", 0.0),
+            "communication_loss": _get_series("communication_loss", 0.0),
+            "measurement_error_factor": _get_series("measurement_error_factor", 1.0),
+            "meter_type": _get_series("meter_type", "unknown"),
+        })
+
+        label_frame["scenario_label"] = "nominal"
+        label_frame.loc[label_frame["ntl_loss_kw"] > 0, "scenario_label"] = "theft_like"
+        label_frame.loc[label_frame["communication_loss"].astype(bool), "scenario_label"] = "communication_issue"
+        label_frame.loc[(label_frame["measured_p_kw"] <= 1e-9) & (label_frame["actual_p_kw"] > 1e-9), "scenario_label"] = "outage_or_trip"
+
+        label_frame["confidence_score"] = 0.65
+        label_frame.loc[label_frame["scenario_label"] == "theft_like", "confidence_score"] = 0.82
+        label_frame.loc[label_frame["scenario_label"] == "communication_issue", "confidence_score"] = 0.78
+        label_frame.loc[label_frame["scenario_label"] == "outage_or_trip", "confidence_score"] = 0.88
+
+        label_frame["reason_code"] = "baseline"
+        label_frame.loc[label_frame["scenario_label"] == "theft_like", "reason_code"] = "ntl_gap"
+        label_frame.loc[label_frame["scenario_label"] == "communication_issue", "reason_code"] = "comm_dropout"
+        label_frame.loc[label_frame["scenario_label"] == "outage_or_trip", "reason_code"] = "service_interruption"
+
+        return label_frame.reset_index(drop=True)
+
+    def build_explainability_summary(self) -> Dict[str, object]:
+        """Create an explainable summary of the main drivers behind the current run."""
+        stats = self.get_summary_statistics()
+        plausible_driver = "technical_loss"
+        if stats.get("ntl_percentage", 0.0) > stats.get("technical_loss_pct_of_source", 0.0):
+            plausible_driver = "non_technical_loss"
+        elif stats.get("communication_loss_rate_percent", 0.0) > 1.0:
+            plausible_driver = "communication_loss"
+
+        return {
+            "drivers": [
+                {
+                    "name": "technical_loss",
+                    "value_pct": stats.get("technical_loss_pct_of_source", 0.0),
+                    "interpretation": "Represents feeder and network losses that remain after metering and operational disturbances are accounted for.",
+                },
+                {
+                    "name": "non_technical_loss",
+                    "value_pct": stats.get("ntl_percentage", 0.0),
+                    "interpretation": "Captures theft-like or unmetered consumption in the synthetic scenario.",
+                },
+                {
+                    "name": "communication_loss",
+                    "value_pct": stats.get("communication_loss_rate_percent", 0.0),
+                    "interpretation": "Reflects meter-data collection issues such as outages, missing readings, or burst communication loss.",
+                },
+            ],
+            "benchmark_status": self._evaluate_realism_kpis(stats)[0].split(":", 1)[0],
+            "dominant_driver": plausible_driver,
+            "confidence_score": 0.74 if plausible_driver == "technical_loss" else 0.81,
+            "reasoning": f"The most influential driver appears to be {plausible_driver}, based on the relative size of the loss components in this run.",
+        }
+
+    def _evaluate_realism_kpis(self, stats: Dict) -> List[str]:
+        """Return KPI status lines compared to profile-specific expected ranges."""
+        ranges = self._get_realism_targets_for_profile()
 
         labels = {
             'technical_loss_pct_of_source': 'Technical loss %',
@@ -568,4 +716,8 @@ class HybridGridDigitalTwin:
         print("Realism KPI Check:")
         for line in self._evaluate_realism_kpis(stats):
             print(f"  - {line}")
+        explainability = self.build_explainability_summary()
+        print("Explainability Summary:")
+        for driver in explainability["drivers"]:
+            print(f"  - {driver['name']}: {driver['value_pct']:.2f}% ({driver['interpretation']})")
         print("="*60 + "\n")

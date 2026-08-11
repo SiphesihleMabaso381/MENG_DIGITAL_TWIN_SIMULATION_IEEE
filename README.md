@@ -147,6 +147,14 @@ The next step is to upgrade the project from synthetic benchmarking to real util
 
 This repository is intended for academic, research, and educational use. Please adapt it carefully if you intend to use it for business or operational deployment.
 
+The project is distributed under the MIT License.
+
+## Repository extras
+
+- [pyproject.toml](pyproject.toml) provides packaging metadata for installation and distribution.
+- [CONTRIBUTING.md](CONTRIBUTING.md) outlines how to contribute.
+- [.github/workflows/python-tests.yml](.github/workflows/python-tests.yml) runs automated tests on GitHub Actions.
+
 ## References
 
 - OpenDSS

@@ -267,18 +267,21 @@ class LoadProfileGenerator:
 
     def _apply_weather_adjustment(self, profile: np.ndarray) -> np.ndarray:
         """Adjust the baseline load profile to mimic simple weather effects."""
+        profile = profile.copy()
         if self.weather_profile == WeatherProfile.HOT:
-            profile = profile.copy()
             profile[[12, 13, 14, 15, 16, 17, 18, 19]] *= 1.10
             profile[20:] *= 1.04
         elif self.weather_profile == WeatherProfile.COLD:
-            profile = profile.copy()
             profile[:6] *= 1.08
             profile[6:10] *= 1.05
         elif self.weather_profile == WeatherProfile.RAINY:
-            profile = profile.copy()
             profile[[8, 9, 10, 11, 12, 13, 14, 15, 16, 17]] *= 0.94
             profile[18:22] *= 1.02
+
+        if self.customer_type in {CustomerType.AGRICULTURAL, CustomerType.PUBLIC_MUNICIPAL}:
+            profile *= 1.02
+        if self.customer_type == CustomerType.BULK:
+            profile *= 1.03
         return profile
 
     def get_hourly_profile(self, day_of_year: int) -> np.ndarray:
@@ -294,12 +297,19 @@ class LoadProfileGenerator:
         baseline = self._get_baseline_profile()
         dow_factor = self._get_dow_factor(day_of_year)
         seasonal_factor = self._get_seasonal_factor(day_of_year)
-        
+
         # Combine all factors
         profile = baseline * dow_factor * seasonal_factor * self.scaling_factor
         profile = self._apply_demand_shape(profile)
         profile = self._apply_weather_adjustment(profile)
-        
+
+        # Add a mild seasonal uplift around South African summer/winter peaks.
+        if day_of_year in range(1, 31):
+            profile *= 1.01
+        elif day_of_year in range(150, 240):
+            profile *= 1.03
+        elif day_of_year in range(300, 365):
+            profile *= 1.02
         return profile
 
     def get_15min_profile(self, day_of_year: int, stochasticity: float = 0.05) -> np.ndarray:

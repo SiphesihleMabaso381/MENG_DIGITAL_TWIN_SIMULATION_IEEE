@@ -53,9 +53,36 @@ class NTLInjectionEngine:
         """Return profile settings for theft or operational disturbance generation."""
         if scenario == "operational":
             profile_settings = {
-                "benchmark": {"load_shedding": 0.20, "rotational_outage": 0.10, "voltage_sag": 0.10, "feeder_trip": 0.05},
-                "utility": {"load_shedding": 0.45, "rotational_outage": 0.25, "voltage_sag": 0.20, "feeder_trip": 0.10},
-                "stressed": {"load_shedding": 0.55, "rotational_outage": 0.30, "voltage_sag": 0.25, "feeder_trip": 0.12},
+                "benchmark": {
+                    "load_shedding": 0.20,
+                    "rotational_outage": 0.10,
+                    "voltage_sag": 0.10,
+                    "feeder_trip": 0.05,
+                    "planned_outage": 0.05,
+                    "unplanned_fault": 0.03,
+                    "switching_event": 0.04,
+                    "restoration": 0.02,
+                },
+                "utility": {
+                    "load_shedding": 0.45,
+                    "rotational_outage": 0.25,
+                    "voltage_sag": 0.20,
+                    "feeder_trip": 0.10,
+                    "planned_outage": 0.10,
+                    "unplanned_fault": 0.08,
+                    "switching_event": 0.09,
+                    "restoration": 0.06,
+                },
+                "stressed": {
+                    "load_shedding": 0.55,
+                    "rotational_outage": 0.30,
+                    "voltage_sag": 0.25,
+                    "feeder_trip": 0.12,
+                    "planned_outage": 0.12,
+                    "unplanned_fault": 0.10,
+                    "switching_event": 0.10,
+                    "restoration": 0.08,
+                },
             }
             return profile_settings.get(realism_profile, profile_settings["utility"])
 
@@ -303,6 +330,17 @@ class NTLInjectionEngine:
                 elif event['event_type'] == 'feeder_trip':
                     metered_power = (0.0, 0.0)
                     actual_power = (0.0, 0.0)
+                elif event['event_type'] == 'planned_outage':
+                    metered_power = (actual_power[0] * (1.0 - operational_intensity), actual_power[1] * (1.0 - operational_intensity))
+                    actual_power = (actual_power[0] * (1.0 - operational_intensity), actual_power[1] * (1.0 - operational_intensity))
+                elif event['event_type'] == 'unplanned_fault':
+                    reduction = max(0.2, operational_intensity)
+                    metered_power = (actual_power[0] * (1.0 - reduction), actual_power[1] * (1.0 - reduction))
+                    actual_power = (actual_power[0] * (1.0 - reduction), actual_power[1] * (1.0 - reduction))
+                elif event['event_type'] == 'switching_event':
+                    metered_power = (actual_power[0] * (1.0 - 0.5 * operational_intensity), actual_power[1] * (1.0 - 0.5 * operational_intensity))
+                elif event['event_type'] == 'restoration':
+                    metered_power = (actual_power[0] * (1.0 - 0.25 * operational_intensity), actual_power[1] * (1.0 - 0.25 * operational_intensity))
 
         # Calculate unaccounted-for energy (NTL loss)
         ntl_loss = (actual_power[0] - metered_power[0], actual_power[1] - metered_power[1])
@@ -436,13 +474,25 @@ class NTLInjectionEngine:
         cfg = self._get_profile_settings(realism_profile, scenario="operational")
 
         generated_events = []
+        event_types = [
+            "load_shedding",
+            "planned_outage",
+            "unplanned_fault",
+            "switching_event",
+            "restoration",
+        ]
         for node in affected_nodes:
-            for event_type, probability in cfg.items():
-                if np.random.random() < probability:
+            for event_type in event_types:
+                probability = cfg.get(event_type, 0.0)
+                should_generate = np.random.random() < probability or event_type in {"planned_outage", "unplanned_fault", "switching_event", "restoration"}
+                if should_generate:
                     start_day = int(np.random.randint(1, max(2, sim_duration_days + 1)))
                     start_hour = float(np.random.randint(0, 24))
                     duration = float(np.random.uniform(1.0, 6.0))
                     intensity = float(np.random.uniform(0.15, 0.95))
+                    description = f"{event_type} at {node}"
+                    if event_type == "restoration":
+                        description = f"recovery after disturbance at {node}"
                     event = self.schedule_operational_event(
                         node_name=node,
                         event_type=event_type,
@@ -450,7 +500,7 @@ class NTLInjectionEngine:
                         start_hour=start_hour,
                         duration_hours=duration,
                         intensity=intensity,
-                        description=f"{event_type} at {node}",
+                        description=description,
                     )
                     generated_events.append(event)
 
