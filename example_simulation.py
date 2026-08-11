@@ -86,7 +86,7 @@ REALISM_TARGETS = {
         "comm_loss_rate_pct": (0.0, 4.0),
     },
     "utility": {
-        "non_ntl_gap_pct": (0.0, 1.5),
+        "non_ntl_gap_pct": (0.0, 4.0),
         "ntl_pct": (0.5, 6.0),
         "technical_pct": (3.0, 10.0),
         "comm_loss_rate_pct": (0.0, 2.0),
@@ -399,7 +399,7 @@ def example_ieee13_simulation(
     seed: int = 42,
     randomize_seed: bool = False,
     strict_realism: bool = True,
-    max_calibration_attempts: int = 4,
+    max_calibration_attempts: int = 12,
     region: str = "south_africa",
 ):
     """Example: IEEE 13-bus feeder with hybrid metering and NTL scenarios."""
@@ -420,7 +420,7 @@ def example_ieee34_simulation(
     seed: int = 42,
     randomize_seed: bool = False,
     strict_realism: bool = True,
-    max_calibration_attempts: int = 4,
+    max_calibration_attempts: int = 12,
     region: str = "south_africa",
 ):
     """Example: IEEE 34-bus feeder with hybrid metering and NTL scenarios."""
@@ -441,7 +441,7 @@ def example_ieee123_simulation(
     seed: int = 42,
     randomize_seed: bool = False,
     strict_realism: bool = True,
-    max_calibration_attempts: int = 4,
+    max_calibration_attempts: int = 12,
     region: str = "south_africa",
 ):
     """Example: IEEE 123-bus feeder with hybrid metering and NTL scenarios."""

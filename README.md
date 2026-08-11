@@ -70,7 +70,7 @@ python main.py --demo
 ### Higher-realism example
 
 ```powershell
-python main.py --feeder IEEE13 --realism-profile utility --seed 42 --no-strict-realism
+python main.py --feeder IEEE13 --realism-profile utility --seed 42 --strict-realism
 ```
 
 ### Useful options
