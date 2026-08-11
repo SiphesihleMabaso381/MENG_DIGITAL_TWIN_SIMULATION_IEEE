@@ -14,6 +14,14 @@ from typing import Dict, List, Tuple, Optional, Callable
 from enum import Enum
 import logging
 
+
+class WeatherProfile(Enum):
+    """Simple weather regime used to shape synthetic demand."""
+    NORMAL = "normal"
+    HOT = "hot"
+    COLD = "cold"
+    RAINY = "rainy"
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -159,7 +167,8 @@ class LoadProfileGenerator:
     
     def __init__(self, customer_type: CustomerType = CustomerType.RESIDENTIAL,
                  annual_consumption_kwh: float = 4000,
-                 south_africa_sector: Optional[SouthAfricaSector] = None):
+                 south_africa_sector: Optional[SouthAfricaSector] = None,
+                 weather_profile: Optional[WeatherProfile] = None):
         """
         Initialize load profile generator.
 
@@ -170,6 +179,7 @@ class LoadProfileGenerator:
         self.customer_type = customer_type
         self.annual_consumption_kwh = annual_consumption_kwh
         self.south_africa_sector = south_africa_sector
+        self.weather_profile = weather_profile or WeatherProfile.NORMAL
         self._compute_scaling_factor()
         
     def _compute_scaling_factor(self):
@@ -237,6 +247,22 @@ class LoadProfileGenerator:
         seasonal = 1.0 + scale * (base - 1.0)
         return seasonal
 
+    def _apply_weather_adjustment(self, profile: np.ndarray) -> np.ndarray:
+        """Adjust the baseline load profile to mimic simple weather effects."""
+        if self.weather_profile == WeatherProfile.HOT:
+            profile = profile.copy()
+            profile[[12, 13, 14, 15, 16, 17, 18, 19]] *= 1.10
+            profile[20:] *= 1.04
+        elif self.weather_profile == WeatherProfile.COLD:
+            profile = profile.copy()
+            profile[:6] *= 1.08
+            profile[6:10] *= 1.05
+        elif self.weather_profile == WeatherProfile.RAINY:
+            profile = profile.copy()
+            profile[[8, 9, 10, 11, 12, 13, 14, 15, 16, 17]] *= 0.94
+            profile[18:22] *= 1.02
+        return profile
+
     def get_hourly_profile(self, day_of_year: int) -> np.ndarray:
         """
         Get hourly load profile (24 hours) for a specific day.
@@ -253,6 +279,7 @@ class LoadProfileGenerator:
         
         # Combine all factors
         profile = baseline * dow_factor * seasonal_factor * self.scaling_factor
+        profile = self._apply_weather_adjustment(profile)
         
         return profile
 
@@ -321,7 +348,8 @@ class NodeLoadProfile:
     
     def __init__(self, node_name: str, customer_type: CustomerType,
                  annual_consumption_kwh: float, power_factor: float = 0.95,
-                 south_africa_sector: Optional[SouthAfricaSector] = None):
+                 south_africa_sector: Optional[SouthAfricaSector] = None,
+                 weather_profile: Optional[WeatherProfile] = None):
         """
         Initialize node load profile.
 
@@ -340,6 +368,7 @@ class NodeLoadProfile:
             customer_type,
             annual_consumption_kwh,
             south_africa_sector=south_africa_sector,
+            weather_profile=weather_profile,
         )
         
     def get_power_at_time(self, day_of_year: int, hour: float) -> Tuple[float, float]:
@@ -370,7 +399,8 @@ class HybridGridLoadManager:
         
     def add_load_node(self, node_name: str, customer_type: CustomerType,
                      annual_consumption_kwh: float,
-                     south_africa_sector: Optional[SouthAfricaSector] = None):
+                     south_africa_sector: Optional[SouthAfricaSector] = None,
+                     weather_profile: Optional[WeatherProfile] = None):
         """
         Add a load node to the system.
 
@@ -384,6 +414,7 @@ class HybridGridLoadManager:
             customer_type,
             annual_consumption_kwh,
             south_africa_sector=south_africa_sector,
+            weather_profile=weather_profile,
         )
         self.node_profiles[node_name] = profile
         logger.debug(f"Added load node {node_name} ({customer_type.value})")

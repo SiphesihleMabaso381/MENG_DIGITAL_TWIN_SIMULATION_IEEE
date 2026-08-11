@@ -132,6 +132,11 @@ class Meter:
         self.clock_offset_seconds = 0
         self.measurement_error_factor = 1.0  # Multiplicative error
         self.communication_outage_remaining_steps = 0
+        self.data_quality_profile: Dict[str, float] = {
+            "missing_reading_probability": 0.0,
+            "stale_reading_probability": 0.0,
+            "noise_scale": 0.0,
+        }
         
         # Initialize random meter-specific error
         self._init_measurement_error()
@@ -179,6 +184,37 @@ class Meter:
         self.cumulative_energy_kwh += energy_kwh
         self.cumulative_reactive_kvarh += reactive_kvarh
         
+        # Apply synthetic data-quality imperfections.
+        missing_reading_probability = self.data_quality_profile.get("missing_reading_probability", 0.0)
+        stale_reading_probability = self.data_quality_profile.get("stale_reading_probability", 0.0)
+        noise_scale = self.data_quality_profile.get("noise_scale", 0.0)
+
+        if np.random.random() < missing_reading_probability:
+            measured_p_out = 0.0
+            measured_q_out = 0.0
+            energy_out = 0.0
+            reactive_out = 0.0
+            communication_loss = True
+            communication_recovered = False
+        else:
+            measured_p_out = measured_p_kw
+            measured_q_out = measured_q_kvar
+            energy_out = energy_kwh
+            reactive_out = reactive_kvarh
+
+        if np.random.random() < stale_reading_probability:
+            measured_p_out = max(0.0, measured_p_out * 0.85)
+            measured_q_out = max(0.0, measured_q_out * 0.85)
+            energy_out = measured_p_out * time_hours
+            reactive_out = measured_q_out * time_hours
+
+        if noise_scale > 0:
+            noise_factor = 1.0 + np.random.normal(0.0, noise_scale)
+            measured_p_out = max(0.0, measured_p_out * noise_factor)
+            measured_q_out = max(0.0, measured_q_out * noise_factor)
+            energy_out = measured_p_out * time_hours
+            reactive_out = measured_q_out * time_hours
+
         # Communication loss with realistic burst-outage behavior.
         if self.communication_outage_remaining_steps > 0:
             communication_loss = True
@@ -242,6 +278,7 @@ class Meter:
             'tamper_flag': tamper_flag,
             'measurement_error_factor': self.measurement_error_factor,
             'accuracy_class': self.characteristics.accuracy_class,
+            'missing_reading': np.random.random() < missing_reading_probability,
         }
 
     def inject_tamper(self, tamper_type: str):
@@ -286,6 +323,11 @@ class HybridMeteringSystem:
         self.nodes = nodes
         self.meters: Dict[str, Meter] = {}
         self.meter_placement: Dict[str, str] = {}  # node -> meter_id mapping
+        self.data_quality_profile: Dict[str, float] = {
+            "missing_reading_probability": 0.0,
+            "stale_reading_probability": 0.0,
+            "noise_scale": 0.0,
+        }
         
         logger.info(f"Initialized hybrid metering system for {len(nodes)} nodes")
         
@@ -389,6 +431,7 @@ class HybridMeteringSystem:
             if node_name in self.meter_placement:
                 meter_id = self.meter_placement[node_name]
                 meter = self.meters[meter_id]
+                meter.data_quality_profile = dict(self.data_quality_profile)
                 measurement = meter.record_measurement(p_kw, q_kvar, time_interval_minutes)
                 measurements.append(measurement)
         

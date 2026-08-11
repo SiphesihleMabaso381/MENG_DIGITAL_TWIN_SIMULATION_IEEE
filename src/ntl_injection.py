@@ -364,6 +364,21 @@ class NTLInjectionEngine:
             })
         return pd.DataFrame(data)
 
+    def schedule_operational_event(self, node_name: str, event_type: str,
+                                  start_day: int, start_hour: float,
+                                  duration_hours: float, intensity: float,
+                                  description: str = ""):
+        """Schedule a non-theft operational event such as load shedding or outage."""
+        self.operational_events.append({
+            'node_name': node_name,
+            'event_type': event_type,
+            'start_day': start_day,
+            'start_hour': start_hour,
+            'duration_hours': duration_hours,
+            'intensity': float(intensity),
+            'description': description or f"{event_type} at {node_name}",
+        })
+
     def generate_south_africa_load_shedding_scenarios(
         self,
         sim_duration_days: int = 30,
