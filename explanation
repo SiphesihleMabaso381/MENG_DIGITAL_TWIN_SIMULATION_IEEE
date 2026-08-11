@@ -3,144 +3,105 @@ SIMPLE EXPLANATION OF THIS PROJECT
 
 What is this project?
 ---------------------
-This project is a virtual copy of a small electricity network.
-That virtual copy is called a digital twin.
+This project is a computer-made copy of a small electricity network.
+It is called a digital twin because it behaves like a virtual version of a real power system.
 
-Think of it like a flight simulator, but for electricity.
-It lets you:
-- build a power grid in software
-- run it step by step over time
-- see how customers use electricity
-- test normal behavior and suspicious behavior
-- view the results in charts and a dashboard
+Think of it like a video game or simulator for electricity.
+Instead of driving a car, you are watching how a power network works over time.
 
+What it helps people do:
+- see how electricity moves through a network
+- understand how homes, shops, farms, and factories use power
+- test what happens when something unusual occurs
+- study problems such as electricity theft or power cuts
+- create charts and reports that are easier to understand
 
-What is a power grid?
----------------------
-A power grid is the system that sends electricity from where it is made to where it is used.
-
-Very simple path:
-1. Substation (main source)
-2. Feeders (electricity roads)
-3. Customers (homes, shops, farms, factories, schools, etc.)
-
-
-What does this simulation do right now?
----------------------------------------
-The current simulation does these main things:
-
-1. Builds a test electricity network
-- It uses standard IEEE test feeder models, especially IEEE 13-bus.
-- This is like using a known map for experiments.
-
-2. Creates different customer types
-- Residential
-- Commercial
-- Industrial
-- Agricultural
-- Public/Municipal
-- Institutional
-- Bulk
-
-Each type uses electricity in a different pattern.
-Example:
-- Homes use more power in morning/evening.
-- Businesses use more in daytime.
-- Industry can be heavy and more constant.
-
-3. Simulates metering systems
-- Some customers have smart meters.
-- Some customers have legacy meters.
-- Meters can have small errors or communication issues.
-
-4. Simulates electricity theft / non-technical losses (NTL)
-It can inject suspicious events, for example:
-- Meter bypass
-- Meter tampering
-- Illegal connection
-
-This helps test if suspicious behavior can be seen in the data.
-
-5. Runs power-flow calculations over time
-- The model steps through many time points, for example every 15 minutes.
-- At each step it calculates loads, metered values, and losses.
-
-6. Saves results to files
-- Main run outputs are saved in results/main_ieee.
-- Files include simulation results, NTL events, statistics, and a dashboard image.
-
-7. Shows a dashboard
-- The dashboard draws charts and a network map.
-- It shows substation -> feeders -> customers.
-- Suspicious customers are marked in red.
-- Customer type labels are shown, such as residential, commercial, industrial, and agricultural.
-
-8. Keeps future real data separate
-- The project now has a safe optional data layer for future SCADA, AMI, and GIS files.
-- If those files do not exist yet, the simulation still works with synthetic data.
-- This means you can add real datasets later without rewriting the core simulation.
-
-
-What does the code do?
-----------------------
-You can imagine the code as a team where each part has a job:
-
-1. Runner (main.py)
-- Starts the full simulation by default.
-- Saves results in results/main_ieee.
-- Opens the dashboard after the run.
-
-2. Example runner (example_simulation.py)
-- Contains demo scenarios.
-- Useful for testing quickly.
-
-3. Grid engine
-- Talks to OpenDSS.
-- Solves electrical behavior in the network.
-
-4. Load/profile manager
-- Creates realistic daily and seasonal usage patterns per customer type.
-
-5. Metering module
-- Simulates smart and legacy meter behavior.
-
-6. NTL module
-- Injects suspicious events and records their effect.
-
-7. Simulation engine
-- Orchestrates everything step by step in time.
-- Collects and exports all final data.
-
-8. Dashboard module
-- Reads result files.
-- Draws charts and suspicious-map visuals for easy understanding.
-
-9. Data source adapters
-- Keep SCADA, AMI, and GIS inputs separate from the simulation core.
-- Load real data only if it exists.
-- Fall back to synthetic data if it is not available yet.
-
-
-What is this useful for?
+What is a power network?
 ------------------------
-This project can help with:
-- Understanding grid behavior
-- Studying electricity theft patterns
-- Testing ideas before real-world deployment
-- Building research evidence for detection methods
+A power network is the system that carries electricity from where it is produced to where it is used.
+A simple path looks like this:
+1. A main source of power
+2. Smaller roads or branches that carry the electricity
+3. Customers who use the electricity
 
+What the simulation does
+------------------------
+The program builds a small electricity network on the computer and then runs it step by step.
+It can:
+- create different kinds of customers
+- simulate how much power each customer uses during the day
+- show how meters record the electricity
+- add unusual events such as theft or outages
+- save the results so people can study them later
 
-How close is it to real life right now?
----------------------------------------
-It is realistic for research and learning, but still not full real-world utility level yet.
-Why?
-- It currently uses benchmark and simulated data.
-- Real utility datasets are planned for later.
-- The code is prepared for future SCADA, AMI, and GIS inputs, but it is not yet using them.
+The main idea is simple:
+this project creates a safe, virtual space where people can learn about electricity systems without touching a real grid.
 
-When real data is added and calibrated in future, realism can increase a lot.
+What kinds of customers are included?
+------------------------------------
+The model includes different customer groups such as:
+- homes
+- shops
+- factories
+- farms
+- government buildings
+- large users
 
+Each group uses electricity in a different way.
+For example, homes often use more power in the morning and evening, while businesses may use more during the day.
+
+What about the meters?
+-----------------------
+Some customers are given smart meters and some are given older meters.
+The model also allows for small meter errors and communication problems.
+This helps make the results feel more realistic.
+
+What about unusual events?
+--------------------------
+The simulator can also create unusual situations such as:
+- a meter being bypassed
+- a meter being tampered with
+- an illegal connection
+- a power cut or load shedding
+
+These events are important because they can make the data look different from normal usage.
+
+Why this matters
+----------------
+Electricity companies need to understand where power is being lost and where the network is having problems.
+This project gives a safe way to test ideas before using them in the real world.
+It is especially useful for:
+- students learning about energy systems
+- researchers studying electricity loss
+- people building AI models that look for unusual patterns
+- anyone who wants to understand how data from a power system can be analyzed
+
+How the project is organized
+----------------------------
+The code is split into small parts, each with a clear job:
+- one part starts the simulation
+- one part builds the electricity network
+- one part creates customer load patterns
+- one part simulates meters
+- one part adds unusual events
+- one part saves the results and draws charts
+
+What is special about this version?
+-----------------------------------
+This version is made to be easier to understand and more relevant to South African conditions.
+It includes examples of:
+- different customer types
+- South Africa-style demand patterns
+- load shedding and other operational disturbances
+
+This makes the model more practical for real-world discussion, even though it is still using synthetic data rather than real utility records.
+
+How close is it to reality?
+---------------------------
+It is not a full real utility system yet.
+It is a simplified model designed for learning, research, and testing ideas.
+It is realistic enough to be useful, but it still uses simulated data rather than confidential real-world utility data.
 
 One-line summary
 ----------------
-This code is a smart virtual electricity-grid lab: it models different customer behaviors, simulates meter readings and theft scenarios, and produces data plus dashboard visuals to study and improve power-loss detection.
+This project is a simple virtual electricity lab that helps people understand how power networks work, how customers use electricity, and how unusual events can be detected.

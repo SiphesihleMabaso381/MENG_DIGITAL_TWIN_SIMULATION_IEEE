@@ -2,22 +2,20 @@
 
 ## Overview
 
-A comprehensive, high-fidelity digital twin simulator for hybrid power distribution networks combining legacy and smart metering infrastructure. Designed for research on **Non-Technical Loss (NTL) detection and mitigation** using federated learning and explainable AI.
+A comprehensive, high-fidelity digital twin simulator for hybrid power distribution networks combining legacy and smart metering infrastructure. It is designed for research on **Non-Technical Loss (NTL) detection and mitigation**, with a practical focus on South African distribution-network conditions and realistic operational disturbances such as load shedding.
 
-**Key Features:**
+**Current capabilities:**
 - ✅ OpenDSS integration for physics-based power flow analysis
 - ✅ IEEE 13/34/123 bus test feeders support
-- ✅ Hybrid smart + legacy metering system simulation
-- ✅ Realistic load profiles (residential/commercial/industrial/agricultural/public/institutional/bulk)
-- ✅ 6 NTL scenario types with stochastic temporal scheduling
+- ✅ Hybrid smart + legacy metering simulation
+- ✅ Realistic synthetic customer load profiles for residential, commercial, industrial, agricultural, public municipal, institutional, and bulk customers
+- ✅ South Africa-oriented load behavior with municipality, private-sector, and government sector profiles
+- ✅ Separate modeling of operational disturbances such as load shedding, outages, voltage sags, and feeder trips
+- ✅ NTL scenario generation with stochastic temporal scheduling
 - ✅ Quasi-static time-series (QSTS) simulation
-- ✅ Data export for federated learning pipelines
-- ✅ Automatic dashboard generation and saved dashboard image
-- ✅ Main output consolidation into `results/main_ieee/` (including `load_profiles.csv`)
-- ✅ Automatic dashboard rendering fallback to external interpreter when local `.venv` plotting is unavailable
-- ✅ Strict realism calibration mode with retry logic and hard target-band enforcement
-- ✅ Prevalence-based NTL injection across full feeder populations (no fixed node-count cap)
-- ✅ Communication dropout and recovery/backfill behavior for settled-data realism
+- ✅ Data export for analysis and federated-learning workflows
+- ✅ Automatic dashboard generation and output consolidation into `results/main_ieee/`
+- ✅ Strict realism calibration mode with retry logic and target-band enforcement
 - ✅ Optional SCADA / AMI / GIS data layer for future real datasets
 
 ---
@@ -106,7 +104,7 @@ print(dss.run_command("New Circuit.test"))
 python main.py
 ```
 
-This runs the full IEEE 13-bus simulation by default, exports results to `results/main_ieee/`, and saves the dashboard to `results/main_ieee/dashboard.png`.
+This runs the full IEEE 13-bus simulation by default, generates synthetic customer load profiles, applies South Africa-oriented sector behavior, schedules both NTL and operational disturbances, and exports results to `results/main_ieee/`.
 
 Recommended command for highest realism:
 
@@ -122,6 +120,7 @@ Useful runtime options:
 - `--random-seed`
 - `--strict-realism` / `--no-strict-realism`
 - `--max-calibration-attempts <int>`
+- `--region south_africa|global`
 - `--demo`
 
 If you want the lightweight demo flow, run:
@@ -147,6 +146,11 @@ Typical files in `results/main_ieee/` after `python main.py`:
 - `dashboard.png`
 
 ### VS Code Play Button
+
+The project is set up so the VS Code Run/Debug button can launch the same entry point as the terminal:
+
+- Use the configuration named "Python: main.py (Full IEEE13)" for the full workflow
+- Use "Python: main.py (Demo)" for the lightweight demo flow
 
 If the Play button launches `main.py` with a local `.venv` that cannot import Matplotlib (`ft2font` issue), `main.py` automatically retries dashboard rendering using the external interpreter at `%LOCALAPPDATA%\venvs\MENG_DIGITAL_TWIN_SIMULATION_IEEE\Scripts\python.exe`.
 
@@ -297,7 +301,8 @@ metering.inject_ntl_at_meter('node1', 'meter_tampering', 0.3)
 Generates realistic consumption patterns with temporal and seasonal variations.
 
 **Key features:**
-- 7 customer types: Residential, Commercial, Industrial, Agricultural, Public/Municipal, Institutional, Bulk
+- 7 core customer types: Residential, Commercial, Industrial, Agricultural, Public/Municipal, Institutional, and Bulk
+- South Africa-specific sector profiles for municipality, private-sector, and government customers
 - Hourly and 15-minute resolution
 - Day-of-week factors (weekday vs. weekend)
 - Seasonal variations (summer/winter peaks)
@@ -335,7 +340,7 @@ daily_profile = load_manager.generate_daily_profiles(day_of_year=180)
 
 ### 4. NTL Injection Engine (`src/ntl_injection.py`)
 
-Schedules and simulates realistic non-technical loss scenarios.
+Schedules and simulates realistic non-technical loss scenarios and operational disturbances.
 
 **Supported NTL types:**
 1. **Full Meter Bypass** - Entire load diverted, meter reads zero
@@ -345,7 +350,13 @@ Schedules and simulates realistic non-technical loss scenarios.
 5. **Load Manipulation** - Temporal shifting/peak clipping
 6. **Meter Freezing** - Meter reading halts periodically
 
-Current scenario model uses feeder-wide prevalence sampling, so affected nodes are not artificially capped to a fixed small number.
+**Operational disturbance types:**
+- Load shedding stages 1-8
+- Rotational outages
+- Voltage sags
+- Feeder trips
+
+The current model keeps operational disturbances separate from theft/NTL so the simulator can distinguish outages from suspicious meter activity.
 
 **Usage:**
 ```python
@@ -473,6 +484,10 @@ node2,legacy,1280.5,53.1,80.5,0.0,0,...
 - ✅ **NTL Scenarios**
   - Meter bypass, tampering, illegal connection, load manipulation, and meter freezing
   - Temporal scheduling of suspicious events
+
+- ✅ **Operational Disturbances**
+  - Load shedding, rotational outages, voltage sags, and feeder trips
+  - Kept separate from theft-related losses for clearer modeling
 
 - ✅ **Future Utility Data Layer**
   - SCADA, AMI, and GIS inputs can be added later

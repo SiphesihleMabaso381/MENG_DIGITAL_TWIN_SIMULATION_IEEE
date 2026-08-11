@@ -29,6 +29,26 @@ class CustomerType(Enum):
     BULK = "bulk"
 
 
+class SouthAfricaSector(Enum):
+    """Utility/customer segments commonly found in South African distribution networks."""
+    MUNICIPALITY = "municipality"
+    PRIVATE_SECTOR = "private_sector"
+    GOVERNMENT = "government"
+
+
+def get_recommended_customer_types() -> List[CustomerType]:
+    """Return a compact set of customer classes for manageable South African simulations."""
+    return [
+        CustomerType.RESIDENTIAL,
+        CustomerType.COMMERCIAL,
+        CustomerType.INDUSTRIAL,
+        CustomerType.AGRICULTURAL,
+        CustomerType.PUBLIC_MUNICIPAL,
+        CustomerType.INSTITUTIONAL,
+        CustomerType.BULK,
+    ]
+
+
 class LoadProfileGenerator:
     """
     Generates realistic electricity load profiles based on customer type,
@@ -79,6 +99,25 @@ class LoadProfileGenerator:
         0.99, 0.97, 0.95, 0.93, 0.92, 0.90, 0.89, 0.88,
     ])
 
+    # South Africa-specific load shapes for municipality, private-sector, and government loads.
+    SA_MUNICIPALITY_DAILY_PROFILE = np.array([
+        0.62, 0.58, 0.55, 0.54, 0.56, 0.66, 0.78, 0.88,
+        0.92, 0.90, 0.86, 0.80, 0.78, 0.80, 0.82, 0.86,
+        0.90, 0.94, 0.96, 0.94, 0.90, 0.84, 0.74, 0.68,
+    ])
+
+    SA_PRIVATE_DAILY_PROFILE = np.array([
+        0.18, 0.15, 0.12, 0.10, 0.12, 0.18, 0.35, 0.70,
+        0.95, 1.00, 1.00, 0.98, 0.94, 0.96, 0.98, 1.00,
+        0.92, 0.82, 0.68, 0.50, 0.36, 0.28, 0.24, 0.20,
+    ])
+
+    SA_GOVERNMENT_DAILY_PROFILE = np.array([
+        0.25, 0.22, 0.20, 0.20, 0.24, 0.36, 0.55, 0.75,
+        0.92, 0.98, 1.00, 0.98, 0.94, 0.96, 0.98, 0.96,
+        0.82, 0.65, 0.50, 0.38, 0.32, 0.28, 0.26, 0.24,
+    ])
+
     # Day-of-week factors (Monday-Sunday) per customer class.
     # These values capture operational behavior differences between sectors.
     DOW_FACTORS_BY_TYPE = {
@@ -119,7 +158,8 @@ class LoadProfileGenerator:
     SEASONAL_MIN_DAY = 100  # Mid-April (spring minimum)
     
     def __init__(self, customer_type: CustomerType = CustomerType.RESIDENTIAL,
-                 annual_consumption_kwh: float = 4000):
+                 annual_consumption_kwh: float = 4000,
+                 south_africa_sector: Optional[SouthAfricaSector] = None):
         """
         Initialize load profile generator.
 
@@ -129,6 +169,7 @@ class LoadProfileGenerator:
         """
         self.customer_type = customer_type
         self.annual_consumption_kwh = annual_consumption_kwh
+        self.south_africa_sector = south_africa_sector
         self._compute_scaling_factor()
         
     def _compute_scaling_factor(self):
@@ -150,7 +191,13 @@ class LoadProfileGenerator:
         
     def _get_baseline_profile(self) -> np.ndarray:
         """Get baseline hourly profile for customer type."""
-        if self.customer_type == CustomerType.RESIDENTIAL:
+        if self.south_africa_sector == SouthAfricaSector.MUNICIPALITY:
+            return self.SA_MUNICIPALITY_DAILY_PROFILE
+        elif self.south_africa_sector == SouthAfricaSector.PRIVATE_SECTOR:
+            return self.SA_PRIVATE_DAILY_PROFILE
+        elif self.south_africa_sector == SouthAfricaSector.GOVERNMENT:
+            return self.SA_GOVERNMENT_DAILY_PROFILE
+        elif self.customer_type == CustomerType.RESIDENTIAL:
             return self.RESIDENTIAL_DAILY_PROFILE
         elif self.customer_type == CustomerType.COMMERCIAL:
             return self.COMMERCIAL_DAILY_PROFILE
@@ -273,7 +320,8 @@ class NodeLoadProfile:
     """
     
     def __init__(self, node_name: str, customer_type: CustomerType,
-                 annual_consumption_kwh: float, power_factor: float = 0.95):
+                 annual_consumption_kwh: float, power_factor: float = 0.95,
+                 south_africa_sector: Optional[SouthAfricaSector] = None):
         """
         Initialize node load profile.
 
@@ -288,7 +336,11 @@ class NodeLoadProfile:
         self.annual_consumption_kwh = annual_consumption_kwh
         self.power_factor = power_factor
         
-        self.generator = LoadProfileGenerator(customer_type, annual_consumption_kwh)
+        self.generator = LoadProfileGenerator(
+            customer_type,
+            annual_consumption_kwh,
+            south_africa_sector=south_africa_sector,
+        )
         
     def get_power_at_time(self, day_of_year: int, hour: float) -> Tuple[float, float]:
         """
@@ -317,7 +369,8 @@ class HybridGridLoadManager:
         self.load_data_cache: Dict[int, pd.DataFrame] = {}  # Cache by day_of_year
         
     def add_load_node(self, node_name: str, customer_type: CustomerType,
-                     annual_consumption_kwh: float):
+                     annual_consumption_kwh: float,
+                     south_africa_sector: Optional[SouthAfricaSector] = None):
         """
         Add a load node to the system.
 
@@ -326,19 +379,31 @@ class HybridGridLoadManager:
             customer_type: Type of customer
             annual_consumption_kwh: Annual consumption
         """
-        profile = NodeLoadProfile(node_name, customer_type, annual_consumption_kwh)
+        profile = NodeLoadProfile(
+            node_name,
+            customer_type,
+            annual_consumption_kwh,
+            south_africa_sector=south_africa_sector,
+        )
         self.node_profiles[node_name] = profile
         logger.debug(f"Added load node {node_name} ({customer_type.value})")
         
-    def add_load_nodes_bulk(self, node_list: List[Tuple[str, CustomerType, float]]):
+    def add_load_nodes_bulk(self, node_list: List[Tuple], south_africa_sector: Optional[SouthAfricaSector] = None):
         """
         Add multiple load nodes at once.
 
         Args:
-            node_list: List of (node_name, customer_type, annual_kwh) tuples
+            node_list: List of (node_name, customer_type, annual_kwh) tuples or
+                (node_name, customer_type, annual_kwh, south_africa_sector) tuples
+            south_africa_sector: Default sector to apply when the tuple does not include one
         """
-        for node_name, cust_type, annual_kwh in node_list:
-            self.add_load_node(node_name, cust_type, annual_kwh)
+        for entry in node_list:
+            if len(entry) == 4:
+                node_name, cust_type, annual_kwh, sector = entry
+            else:
+                node_name, cust_type, annual_kwh = entry
+                sector = south_africa_sector
+            self.add_load_node(node_name, cust_type, annual_kwh, south_africa_sector=sector)
         logger.info(f"Added {len(node_list)} load nodes")
 
     def get_loads_at_time(self, day_of_year: int, hour: float) -> Dict[str, Tuple[float, float]]:

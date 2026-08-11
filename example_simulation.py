@@ -16,7 +16,12 @@ from typing import Dict, List, Tuple
 # Import simulation modules
 from src.opendsss_interface import OpenDSSInterface
 from src.hybrid_metering import HybridMeteringSystem
-from src.load_profiles import HybridGridLoadManager, CustomerType
+from src.load_profiles import (
+    HybridGridLoadManager,
+    CustomerType,
+    SouthAfricaSector,
+    get_recommended_customer_types,
+)
 from src.ntl_injection import NTLInjectionEngine, NTLType
 from src.simulation_engine import HybridGridDigitalTwin, SimulationConfig
 
@@ -145,17 +150,14 @@ def _resolve_project_path(path_str: str) -> str:
     return str((Path(__file__).resolve().parent / path_str).resolve())
 
 
-def _build_feeder_load_definitions(load_names: List[str]) -> List[Tuple[str, CustomerType, float]]:
-    """Create (node, customer_type, annual_kwh) tuples for all feeder loads."""
-    customer_cycle = [
-        CustomerType.RESIDENTIAL,
-        CustomerType.COMMERCIAL,
-        CustomerType.INDUSTRIAL,
-        CustomerType.AGRICULTURAL,
-        CustomerType.PUBLIC_MUNICIPAL,
-        CustomerType.INSTITUTIONAL,
-        CustomerType.BULK,
-    ]
+def _build_feeder_load_definitions(
+    load_names: List[str],
+    region: str = "south_africa",
+) -> List[Tuple[str, CustomerType, float, object]]:
+    """Create (node, customer_type, annual_kwh, sector) tuples for all feeder loads."""
+    from src.load_profiles import SouthAfricaSector
+
+    customer_cycle = get_recommended_customer_types()
     annual_kwh_by_type = {
         CustomerType.RESIDENTIAL: 4000,
         CustomerType.COMMERCIAL: 50000,
@@ -165,11 +167,20 @@ def _build_feeder_load_definitions(load_names: List[str]) -> List[Tuple[str, Cus
         CustomerType.INSTITUTIONAL: 90000,
         CustomerType.BULK: 450000,
     }
+    sector_cycle = [
+        SouthAfricaSector.MUNICIPALITY,
+        SouthAfricaSector.PRIVATE_SECTOR,
+        SouthAfricaSector.GOVERNMENT,
+    ]
 
-    definitions: List[Tuple[str, CustomerType, float]] = []
+    definitions: List[Tuple[str, CustomerType, float, object]] = []
     for idx, load_name in enumerate(sorted([n for n in load_names if n], key=str.lower)):
         customer_type = customer_cycle[idx % len(customer_cycle)]
-        definitions.append((load_name, customer_type, annual_kwh_by_type[customer_type]))
+        if region.lower() == "south_africa":
+            sector = sector_cycle[(idx // len(customer_cycle)) % len(sector_cycle)]
+        else:
+            sector = None
+        definitions.append((load_name, customer_type, annual_kwh_by_type[customer_type], sector))
 
     return definitions
 
@@ -222,6 +233,7 @@ def _run_feeder_simulation(
     randomize_seed: bool = False,
     strict_realism: bool = True,
     max_calibration_attempts: int = 4,
+    region: str = "south_africa",
 ):
     """
     Generic feeder simulation with hybrid metering and NTL scenarios.
@@ -269,7 +281,7 @@ def _run_feeder_simulation(
         digital_twin.setup_feeder(opendss)
 
         load_manager = HybridGridLoadManager()
-        feeder_loads = _build_feeder_load_definitions(opendss.loads)
+        feeder_loads = _build_feeder_load_definitions(opendss.loads, region=region)
         print(f"  Detected feeder loads: {len(feeder_loads)}")
         load_manager.add_load_nodes_bulk(feeder_loads)
 
@@ -290,9 +302,17 @@ def _run_feeder_simulation(
         _schedule_realistic_ntl_events(
             ntl_engine,
             feeder_name,
-            [node for node, _, _ in feeder_loads],
+            [node for node, _, _, _ in feeder_loads],
             simulation_days=config.simulation_days,
             realism_profile=config.realism_profile,
+        )
+
+        print("\n[Step 5b] Scheduling South African load-shedding events...")
+        ntl_engine.generate_south_africa_load_shedding_scenarios(
+            sim_duration_days=config.simulation_days,
+            stage=4 if config.realism_profile == "stressed" else 2,
+            affected_nodes=[node for node, _, _, _ in feeder_loads],
+            include_all_stages=True,
         )
 
         print("\n[Step 6] Running simulation...")
@@ -375,6 +395,7 @@ def example_ieee13_simulation(
     randomize_seed: bool = False,
     strict_realism: bool = True,
     max_calibration_attempts: int = 4,
+    region: str = "south_africa",
 ):
     """Example: IEEE 13-bus feeder with hybrid metering and NTL scenarios."""
     return _run_feeder_simulation(
@@ -385,6 +406,7 @@ def example_ieee13_simulation(
         randomize_seed=randomize_seed,
         strict_realism=strict_realism,
         max_calibration_attempts=max_calibration_attempts,
+        region=region,
     )
 
 
@@ -394,6 +416,7 @@ def example_ieee34_simulation(
     randomize_seed: bool = False,
     strict_realism: bool = True,
     max_calibration_attempts: int = 4,
+    region: str = "south_africa",
 ):
     """Example: IEEE 34-bus feeder with hybrid metering and NTL scenarios."""
     return _run_feeder_simulation(
@@ -404,6 +427,7 @@ def example_ieee34_simulation(
         randomize_seed=randomize_seed,
         strict_realism=strict_realism,
         max_calibration_attempts=max_calibration_attempts,
+        region=region,
     )
 
 
@@ -413,6 +437,7 @@ def example_ieee123_simulation(
     randomize_seed: bool = False,
     strict_realism: bool = True,
     max_calibration_attempts: int = 4,
+    region: str = "south_africa",
 ):
     """Example: IEEE 123-bus feeder with hybrid metering and NTL scenarios."""
     return _run_feeder_simulation(
@@ -423,6 +448,7 @@ def example_ieee123_simulation(
         randomize_seed=randomize_seed,
         strict_realism=strict_realism,
         max_calibration_attempts=max_calibration_attempts,
+        region=region,
     )
 
 
@@ -439,19 +465,32 @@ def example_with_realistic_profiles():
     
     print("\n[Step 1] Generating load profiles for different customer types...")
     
+    annual_kwh_by_type = {
+        CustomerType.RESIDENTIAL: 4000,
+        CustomerType.COMMERCIAL: 50000,
+        CustomerType.INDUSTRIAL: 200000,
+        CustomerType.AGRICULTURAL: 70000,
+        CustomerType.PUBLIC_MUNICIPAL: 60000,
+        CustomerType.INSTITUTIONAL: 90000,
+        CustomerType.BULK: 450000,
+    }
+    sector_by_type = {
+        CustomerType.COMMERCIAL: SouthAfricaSector.PRIVATE_SECTOR,
+        CustomerType.PUBLIC_MUNICIPAL: SouthAfricaSector.MUNICIPALITY,
+        CustomerType.INSTITUTIONAL: SouthAfricaSector.GOVERNMENT,
+    }
     profile_specs = [
-        (CustomerType.RESIDENTIAL, 4000),
-        (CustomerType.COMMERCIAL, 50000),
-        (CustomerType.INDUSTRIAL, 200000),
-        (CustomerType.AGRICULTURAL, 70000),
-        (CustomerType.PUBLIC_MUNICIPAL, 60000),
-        (CustomerType.INSTITUTIONAL, 90000),
-        (CustomerType.BULK, 450000),
+        (customer_type, annual_kwh_by_type[customer_type], sector_by_type.get(customer_type))
+        for customer_type in get_recommended_customer_types()
     ]
 
     profile_results = {}
-    for customer_type, annual_kwh in profile_specs:
-        generator = LoadProfileGenerator(customer_type, annual_consumption_kwh=annual_kwh)
+    for customer_type, annual_kwh, sector in profile_specs:
+        generator = LoadProfileGenerator(
+            customer_type,
+            annual_consumption_kwh=annual_kwh,
+            south_africa_sector=sector,
+        )
         day1 = generator.get_hourly_profile(day_of_year=1)
         day180 = generator.get_hourly_profile(day_of_year=180)
         profile_results[customer_type.value] = {
@@ -460,7 +499,7 @@ def example_with_realistic_profiles():
         }
 
     print("\n[Step 2] Profile Summary:")
-    for customer_type, _ in profile_specs:
+    for customer_type, _, _ in profile_specs:
         values = profile_results[customer_type.value]
         print(
             f"  {customer_type.value:<16} - Day 1 avg load: {values['day1'].mean():.2f}pu, "
@@ -470,7 +509,7 @@ def example_with_realistic_profiles():
     # Export profiles to CSV
     hours = np.arange(24)
     profiles_data = {'Hour': hours}
-    for customer_type, _ in profile_specs:
+    for customer_type, _, _ in profile_specs:
         values = profile_results[customer_type.value]
         column_prefix = customer_type.value.replace("_", " ").title().replace(" ", "_")
         profiles_data[f'{column_prefix}_Winter'] = values['day1']

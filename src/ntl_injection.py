@@ -44,6 +44,8 @@ class NTLInjectionEngine:
     """
     Injects realistic non-technical loss scenarios into the simulation.
     Supports temporal scheduling of theft events with realistic patterns.
+    Also supports South African operational disturbances such as load shedding,
+    which should be separated from theft for training and analytics.
     """
     
     def __init__(self, load_manager):
@@ -55,6 +57,7 @@ class NTLInjectionEngine:
         """
         self.load_manager = load_manager
         self.ntl_events: List[NTLEvent] = []
+        self.operational_events: List[Dict] = []
         self.node_ntl_state: Dict[str, Dict] = {}  # Track active NTL at each node
         
         # Initialize NTL state for all nodes
@@ -64,6 +67,8 @@ class NTLInjectionEngine:
                 'actual_power_kw': 0,
                 'metered_power_kw': 0,
                 'ntl_loss_kw': 0,
+                'operational_event_type': None,
+                'operational_intensity': 0.0,
             }
         
         logger.info("Initialized NTL injection engine")
@@ -213,6 +218,8 @@ class NTLInjectionEngine:
         metered_power = actual_power  # Start with legitimate
         ntl_loss = (0, 0)
         active_ntl_type = None
+        operational_event_type = None
+        operational_intensity = 0.0
         
         # Check which NTL events are active
         for event in self.ntl_events:
@@ -236,6 +243,25 @@ class NTLInjectionEngine:
                 elif event.ntl_type == NTLType.METER_FREEZING:
                     metered_power = self._apply_meter_freezing(node_name, actual_power, intensity)
         
+        # Apply South African load-shedding / operational interruptions
+        for event in self.operational_events:
+            if event['node_name'] == node_name and self._is_operational_event_active(event, day_of_year, hour):
+                operational_event_type = event['event_type']
+                operational_intensity = event['intensity']
+                if event['event_type'] == 'load_shedding':
+                    # Customer load is disconnected for the interval. Metered and actual both collapse.
+                    metered_power = (0.0, 0.0)
+                    actual_power = (0.0, 0.0)
+                elif event['event_type'] == 'rotational_outage':
+                    metered_power = (actual_power[0] * (1.0 - operational_intensity), actual_power[1] * (1.0 - operational_intensity))
+                    actual_power = (actual_power[0] * (1.0 - operational_intensity), actual_power[1] * (1.0 - operational_intensity))
+                elif event['event_type'] == 'voltage_sag':
+                    sag_factor = 1.0 - operational_intensity
+                    metered_power = (actual_power[0] * sag_factor, actual_power[1] * sag_factor)
+                elif event['event_type'] == 'feeder_trip':
+                    metered_power = (0.0, 0.0)
+                    actual_power = (0.0, 0.0)
+
         # Calculate unaccounted-for energy (NTL loss)
         ntl_loss = (actual_power[0] - metered_power[0], actual_power[1] - metered_power[1])
         
@@ -244,12 +270,16 @@ class NTLInjectionEngine:
         self.node_ntl_state[node_name]['metered_power_kw'] = metered_power[0]
         self.node_ntl_state[node_name]['ntl_loss_kw'] = ntl_loss[0]
         self.node_ntl_state[node_name]['active_ntl'] = active_ntl_type
+        self.node_ntl_state[node_name]['operational_event_type'] = operational_event_type
+        self.node_ntl_state[node_name]['operational_intensity'] = operational_intensity
         
         return {
             'actual_power': actual_power,
             'metered_power': metered_power,
             'ntl_loss': ntl_loss,
             'ntl_type': active_ntl_type,
+            'operational_event_type': operational_event_type,
+            'operational_intensity': operational_intensity,
         }
 
     def get_all_nodes_with_ntl(self, day_of_year: int, hour: float) -> Dict[str, Dict]:
@@ -297,6 +327,13 @@ class NTLInjectionEngine:
                 active.append(event)
         return active
 
+    def _is_operational_event_active(self, event: Dict, current_day: int, current_hour: float) -> bool:
+        """Check whether a South African operational event is active."""
+        event_start_total_hours = (event['start_day'] - 1) * 24 + event['start_hour']
+        event_end_total_hours = event_start_total_hours + event['duration_hours']
+        current_total_hours = (current_day - 1) * 24 + current_hour
+        return event_start_total_hours <= current_total_hours < event_end_total_hours
+
     def export_event_schedule(self) -> pd.DataFrame:
         """
         Export NTL event schedule as DataFrame.
@@ -315,7 +352,87 @@ class NTLInjectionEngine:
                 'Intensity': event.intensity_fraction,
                 'Description': event.description,
             })
+        for event in self.operational_events:
+            data.append({
+                'Node': event['node_name'],
+                'NTL_Type': 'operational_event',
+                'Start_Day': event['start_day'],
+                'Start_Hour': event['start_hour'],
+                'Duration_Hours': event['duration_hours'],
+                'Intensity': event['intensity'],
+                'Description': event['description'],
+            })
         return pd.DataFrame(data)
+
+    def generate_south_africa_load_shedding_scenarios(
+        self,
+        sim_duration_days: int = 30,
+        stage: Optional[int] = None,
+        affected_nodes: Optional[List[str]] = None,
+        include_all_stages: bool = False,
+    ) -> List[Dict]:
+        """Generate South African load-shedding schedules separate from theft.
+
+        By default this generates a single stage-based event. When include_all_stages=True,
+        it creates a small representative schedule covering stages 1 through 8.
+        """
+        if affected_nodes is None:
+            affected_nodes = list(self.load_manager.node_profiles.keys())
+
+        if stage is None:
+            stage = 4
+
+        valid_stages = [1, 2, 3, 4, 5, 6, 7, 8]
+        if stage not in valid_stages:
+            stage = 4
+
+        generated_events = []
+        for node in affected_nodes:
+            if include_all_stages:
+                for current_stage in valid_stages:
+                    start_day = 1 + (current_stage - 1) % max(1, sim_duration_days)
+                    start_hour = float((current_stage - 1) * 2)
+                    duration = float(np.random.uniform(1.0, 4.0))
+                    intensity = float(np.random.uniform(0.35, 0.95)) if current_stage >= 4 else float(np.random.uniform(0.15, 0.55))
+                    event_type = "load_shedding"
+                    description = f"South Africa {event_type} stage {current_stage} at {node}"
+                    event = {
+                        'node_name': node,
+                        'event_type': event_type,
+                        'stage': current_stage,
+                        'start_day': start_day,
+                        'start_hour': start_hour,
+                        'duration_hours': duration,
+                        'intensity': intensity,
+                        'description': description,
+                    }
+                    self.operational_events.append(event)
+                    generated_events.append(event)
+            else:
+                start_day = 1
+                start_hour = 0.0
+                duration = float(np.random.uniform(1.0, 6.0))
+                intensity = float(np.random.uniform(0.35, 0.95)) if stage >= 4 else float(np.random.uniform(0.15, 0.55))
+                event_type = "load_shedding"
+                description = f"South Africa {event_type} stage {stage} at {node}"
+                event = {
+                    'node_name': node,
+                    'event_type': event_type,
+                    'stage': stage,
+                    'start_day': start_day,
+                    'start_hour': start_hour,
+                    'duration_hours': duration,
+                    'intensity': intensity,
+                    'description': description,
+                }
+                self.operational_events.append(event)
+                generated_events.append(event)
+
+        logger.info(
+            f"Generated {len(generated_events)} South African operational outage events "
+            f"({'all stages' if include_all_stages else f'stage {stage}'})"
+        )
+        return generated_events
 
     def generate_realistic_theft_scenarios(
         self,

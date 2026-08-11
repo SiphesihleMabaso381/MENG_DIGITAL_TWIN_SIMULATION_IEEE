@@ -192,6 +192,12 @@ def parse_args() -> argparse.Namespace:
         default=12,
         help="Maximum calibration attempts when strict realism is enabled",
     )
+    parser.add_argument(
+        "--region",
+        choices=["south_africa", "global"],
+        default="south_africa",
+        help="Choose the regional load-profile behavior model",
+    )
     return parser.parse_args()
 
 
@@ -223,6 +229,7 @@ def run() -> int:
             randomize_seed=args.random_seed,
             strict_realism=args.strict_realism,
             max_calibration_attempts=args.max_calibration_attempts,
+            region=args.region,
         )
         _relocate_main_outputs(project_root, feeder=feeder)
         _ensure_main_load_profile_output(project_root)
