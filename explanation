@@ -30,7 +30,16 @@ The current version can:
 - simulate measurement errors and communication loss,
 - add load-shedding or outage-type events,
 - inject NTL-style scenarios,
-- and export results to CSV and image files, including realism, sensitivity, and labeling-ready outputs.
+- export results to CSV and image files, including realism, sensitivity, and labeling-ready outputs,
+- assess data quality and basic feeder physics consistency,
+- generate lightweight explainability and federated-learning readiness scores,
+- and combine those checks into deployment_readiness_report.json.
+
+What the current readiness layer means
+--------------------------------------
+The readiness layer evaluates the synthetic simulation outputs. It checks whether the generated data is usable, whether feeder-level values are physically plausible, whether anomaly-related features can be explained, and whether simulated distributed clients can be aggregated.
+
+It is a research and engineering scaffold. It is not a trained production AI model, it does not make confirmed theft decisions, and its readiness score is not approval for live utility operation.
 
 Why this version is relevant to South Africa
 -------------------------------------------
@@ -48,12 +57,15 @@ The code is split into separate parts so each task has a clear role:
 - one part simulates meter behavior,
 - one part injects NTL and operational events,
 - one part runs the simulation and exports results,
-- and one part creates the dashboard.
+- one part creates the dashboard,
+- and additional modules check data quality, physics consistency, explainability, federated-learning readiness, and overall deployment preparation.
 
 How realistic is it?
 ---------------------
 The model is still based on synthetic and benchmark-style data, so it is not yet a full replacement for real utility operations. However, it is realistic enough to support research, education, presentation, and early-stage analytics workflows.
 
+The current project phase deliberately focuses on synthetic IEEE benchmark experiments. A final AI detector and live operational integrations are outside this phase. The generated labeling-ready datasets and evaluation outputs provide a controlled foundation for future research development.
+
 One-line summary
 ----------------
-This project is a practical virtual power-system simulator for learning about feeder behavior, metering quality, and NTL analysis in a South Africa-inspired context, with exportable reports for research and demonstration use.
+This project is a practical synthetic virtual power-system laboratory for studying feeder behavior, metering quality, and NTL analysis in a South Africa-inspired context, with physics checks, readiness reporting, and exportable research outputs.

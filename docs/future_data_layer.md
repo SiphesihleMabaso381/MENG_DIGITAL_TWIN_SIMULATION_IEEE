@@ -1,12 +1,12 @@
-# Future Data Layer
+# Future Data Layer (Not Current Scope)
 
-This project is already structured so real utility data can be integrated later without replacing the core simulation logic.
+This document records a future integration boundary only. Real utility data is intentionally outside the current project phase; the active system uses synthetic and IEEE benchmark data.
 
 ## Current status
 
 At the moment the simulator relies on synthetic and benchmark-style data because institutional access to real utility datasets is not yet available. That is intentional and keeps the project reproducible and transparent.
 
-## Planned upgrade path
+## Future-only upgrade path
 
 The intended staged pathway is:
 

@@ -2,7 +2,9 @@
 
 ## Current project state
 
-The project now runs as a full end-to-end simulation workflow from the terminal or the VS Code Run button. It generates synthetic but realistic feeder, load, and metering results, then writes them into results/main_ieee and opens the dashboard automatically after a full run.
+The project now runs as a full end-to-end synthetic simulation workflow from the terminal or the VS Code Run button. It generates benchmark feeder, load, metering, NTL, and operational-disturbance results, evaluates the generated output with the readiness modules, writes everything into results/main_ieee, and opens the dashboard automatically after a full run.
+
+This phase intentionally does not require real utility data or a final trained AI model. It is a reproducible research and deployment-preparation platform based on IEEE benchmark feeders and synthetic scenarios.
 
 ## Quick setup
 
@@ -76,6 +78,7 @@ Typical files:
 - results/main_ieee/sensitivity_report.csv
 - results/main_ieee/labeling_ready.csv
 - results/main_ieee/load_profiles.csv
+- results/main_ieee/deployment_readiness_report.json
 - results/main_ieee/dashboard.png
 
 ## Notes on realism
@@ -84,6 +87,8 @@ The simulator deliberately separates operational disturbances from NTL events. T
 - load shedding or outages,
 - meter behavior issues,
 - and theft-like patterns.
+
+After a full run, Step 11 assesses the generated results using data quality, physics consistency, explainability, federated-learning scaffolding, and benchmark validation. This score describes synthetic prototype readiness; it is not a live utility deployment score.
 
 ## Troubleshooting
 
@@ -107,4 +112,4 @@ python main.py --feeder IEEE13 --realism-profile utility --seed 42 --no-strict-r
 
 Open the generated outputs in results/main_ieee and review the dashboard, realism report, and NTL statistics.
 
-This project is currently a strong prototype for research and presentation, and it is designed to evolve into a more data-rich model as real utility datasets become available. It also now includes sensitivity reporting and a labeling-ready dataset for future analytics and machine-learning-oriented workflows.
+This project is currently a synthetic research prototype for power-system and NTL experimentation. Its current improvement path is repeatable benchmarking, baseline comparison, robustness testing, explainable alert generation, and automated verification. It also includes sensitivity reporting, a labeling-ready dataset, and a deployment-readiness report for research evaluation.

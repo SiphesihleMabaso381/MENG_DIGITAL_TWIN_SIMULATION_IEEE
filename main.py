@@ -9,17 +9,127 @@ Optional behavior:
 """
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
+
 from example_simulation import main as run_demo
 from example_simulation import example_ieee13_simulation
 from example_simulation import example_ieee34_simulation
 from example_simulation import example_ieee123_simulation
 from example_simulation import example_with_realistic_profiles
+
+
+def _run_deployment_readiness_assessment(results_df, digital_twin, output_dir: Path) -> None:
+    """Assess the generated simulation outputs with the future-ready modules."""
+    from src.data_quality import DataQualityManager
+    from src.deployment_readiness import DeploymentReadinessEvaluator
+    from src.explainability import ExplainabilityEngine
+    from src.federated_learning import (
+        FederatedAveragingAggregator,
+        FederatedClient,
+        FederatedLearningConfig,
+    )
+    from src.physics_informed import FeederPhysicsValidator
+
+    if results_df is None or results_df.empty:
+        print("Deployment readiness assessment skipped: no simulation rows available.")
+        return
+
+    assessment_data = results_df.copy()
+    assessment_data["is_anomaly"] = (
+        assessment_data.get("ntl_loss_kw", 0).fillna(0).gt(0)
+        | assessment_data.get("tamper_flag", False).fillna(False).astype(bool)
+        | assessment_data.get("missing_reading", False).fillna(False).astype(bool)
+    ).astype(int)
+
+    numeric_quality_columns = [
+        column
+        for column in ["energy_kwh", "actual_p_kw", "measured_p_kw", "ntl_loss_kw"]
+        if column in assessment_data.columns
+    ]
+    quality_data = (
+        assessment_data.groupby("timestamp", as_index=False)[numeric_quality_columns].sum()
+        if "timestamp" in assessment_data.columns and numeric_quality_columns
+        else assessment_data
+    )
+    quality = DataQualityManager().clean_and_validate(
+        quality_data,
+        required_columns=["timestamp", *numeric_quality_columns],
+        timestamp_field="timestamp",
+    )
+
+    source_power = float(assessment_data.get("source_p_kw", 0).mean())
+    actual_power = float(assessment_data.get("actual_total_kw", 0).mean())
+    physics = FeederPhysicsValidator().evaluate(
+        injected_power_by_node={"source": source_power, "feeder_load": -actual_power},
+        voltage_by_node={"feeder_nominal": 230.0},
+    )
+
+    explainability_features = [
+        column
+        for column in ["actual_p_kw", "measured_p_kw", "energy_kwh", "ntl_loss_kw"]
+        if column in assessment_data.columns
+    ]
+    explainability = ExplainabilityEngine().explain_feature_importance(
+        assessment_data[[*explainability_features, "is_anomaly"]],
+        target_column="is_anomaly",
+        top_k=4,
+    )
+
+    client_frames = [
+        assessment_data.iloc[indexes].copy()
+        for indexes in np.array_split(np.arange(len(assessment_data)), 4)
+        if len(indexes) > 0
+    ]
+    clients = [FederatedClient(f"feeder_client_{idx}", frame) for idx, frame in enumerate(client_frames, start=1)]
+    client_states = [
+        client.train_local_model(explainability_features, "is_anomaly")
+        for client in clients
+    ]
+    federated = FederatedAveragingAggregator(
+        FederatedLearningConfig(rounds=3, client_count=len(clients))
+    ).aggregate(client_states)
+
+    stats = digital_twin.get_summary_statistics()
+    targets = digital_twin._get_realism_targets_for_profile()
+    benchmark_metrics = {
+        "technical_loss_pct_of_source": stats.get("technical_loss_pct_of_source", 0.0),
+        "ntl_percentage": stats.get("ntl_percentage", 0.0),
+        "communication_loss_rate_percent": stats.get("communication_loss_rate_percent", 0.0),
+    }
+    benchmark_scores = []
+    for metric_name, value in benchmark_metrics.items():
+        low, high = targets[metric_name]
+        if low <= value <= high:
+            benchmark_scores.append(100.0)
+        else:
+            distance = (low - value) if value < low else (value - high)
+            benchmark_scores.append(max(0.0, 100.0 - distance * 10.0))
+    benchmark_scores.append(float(stats.get("convergence_rate_percent", 0.0)))
+    benchmark_score = float(np.mean(benchmark_scores))
+
+    report = DeploymentReadinessEvaluator().evaluate(
+        data_quality=quality,
+        physics=physics,
+        explainability=explainability,
+        federated=federated,
+        benchmark_score=benchmark_score,
+    )
+    report_path = output_dir / "deployment_readiness_report.json"
+    report_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+
+    print("\n[Step 11] Deployment Readiness Assessment:")
+    print(f"  Readiness score: {report.readiness_score:.2f}/100")
+    print(f"  Summary: {report.summary}")
+    for check in report.checks:
+        print(f"  - {check.name}: {check.score:.2f} ({check.status})")
+    print(f"  Report exported to: {report_path}")
 
 
 def _relocate_main_outputs(base_dir: Path, feeder: str = "IEEE13") -> None:
@@ -218,7 +328,7 @@ def run() -> int:
     else:
         example_with_realistic_profiles()
         _ensure_main_load_profile_output(project_root)
-        feeder_runners[feeder](
+        simulation_result = feeder_runners[feeder](
             realism_profile=args.realism_profile,
             seed=args.seed,
             randomize_seed=args.random_seed,
@@ -228,6 +338,13 @@ def run() -> int:
         )
         _relocate_main_outputs(project_root, feeder=feeder)
         _ensure_main_load_profile_output(project_root)
+        if simulation_result:
+            results_df, digital_twin = simulation_result
+            _run_deployment_readiness_assessment(
+                results_df,
+                digital_twin,
+                project_root / "results" / "main_ieee",
+            )
         _show_dashboard(project_root)
 
     return 0

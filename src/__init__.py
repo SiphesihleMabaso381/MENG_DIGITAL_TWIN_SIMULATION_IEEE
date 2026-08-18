@@ -20,6 +20,21 @@ from .data_sources import (
     UtilityDataLoader,
     load_optional_utility_data,
 )
+from .data_quality import DataQualityManager, DataQualityIssue, DataQualityReport
+from .physics_informed import FeederPhysicsValidator, PhysicsCheckResult
+from .federated_learning import (
+    ClientModelState,
+    FederatedAveragingAggregator,
+    FederatedClient,
+    FederatedLearningConfig,
+    FederatedLearningReport,
+)
+from .explainability import ExplainabilityEngine, ExplainabilityReport, FeatureImpact
+from .deployment_readiness import (
+    DeploymentReadinessCheck,
+    DeploymentReadinessEvaluator,
+    DeploymentReadinessReport,
+)
 
 __all__ = [
     'OpenDSSInterface',
@@ -39,6 +54,22 @@ __all__ = [
     'UtilityDataBundle',
     'UtilityDataLoader',
     'load_optional_utility_data',
+    'DataQualityManager',
+    'DataQualityIssue',
+    'DataQualityReport',
+    'FeederPhysicsValidator',
+    'PhysicsCheckResult',
+    'ClientModelState',
+    'FederatedAveragingAggregator',
+    'FederatedClient',
+    'FederatedLearningConfig',
+    'FederatedLearningReport',
+    'ExplainabilityEngine',
+    'ExplainabilityReport',
+    'FeatureImpact',
+    'DeploymentReadinessCheck',
+    'DeploymentReadinessEvaluator',
+    'DeploymentReadinessReport',
 ]
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"

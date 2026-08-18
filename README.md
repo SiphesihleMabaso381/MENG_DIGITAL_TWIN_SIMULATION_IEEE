@@ -20,15 +20,16 @@ The current implementation is best viewed as a research and demonstration protot
 - South Africa-inspired customer behavior and demand shapes
 - Separate handling of operational disturbances and theft/NTL events
 - Export of main simulation results, NTL statistics, realism summaries, sensitivity reports, and labeling-ready datasets
-- Explainability summaries and benchmarking-style reporting for research use
+- Data-quality, physics-consistency, explainability, federated-learning, and deployment-readiness reporting
 - Automatic dashboard generation and saving to results/main_ieee/dashboard.png
-- Optional future integration with real AMI, SCADA, and GIS data
+- A standalone synthetic readiness demonstration in deployment_readiness_demo.py
 
 ## Project status
 
 This version uses synthetic and benchmark-style data because real utility datasets are not yet available. That is intentional and keeps the work transparent, reproducible, and suitable for early-stage research.
 
 The project is already runnable end to end from the terminal or the VS Code Run button.
+The current phase does not require real utility data or a final trained AI model; it focuses on a reproducible digital-twin, synthetic NTL, evaluation, and deployment-preparation platform.
 
 ## Installation
 
@@ -60,7 +61,7 @@ If you prefer to activate the environment manually, use:
 python main.py
 ```
 
-This runs the full IEEE13 workflow by default, generates load profiles, performs the simulation, relocates outputs into results/main_ieee, and opens the dashboard after completion.
+This runs the full IEEE13 workflow by default, generates load profiles, performs the simulation, assesses the generated results with the readiness modules, relocates outputs into results/main_ieee, and opens the dashboard after completion.
 
 ### Demo run
 
@@ -97,6 +98,7 @@ Full runs write consolidated outputs to results/main_ieee:
 - sensitivity_report.csv
 - labeling_ready.csv
 - load_profiles.csv
+- deployment_readiness_report.json
 - dashboard.png
 
 ## Project structure
@@ -108,6 +110,11 @@ MENG_DIGITAL_TWIN_SIMULATION_IEEE/
 ├── src/
 │   ├── dashboard.py
 │   ├── data_sources.py
+│   ├── data_quality.py
+│   ├── deployment_readiness.py
+│   ├── explainability.py
+│   ├── federated_learning.py
+│   ├── physics_informed.py
 │   ├── hybrid_metering.py
 │   ├── load_profiles.py
 │   ├── ntl_injection.py
@@ -127,6 +134,12 @@ MENG_DIGITAL_TWIN_SIMULATION_IEEE/
 - src/ntl_injection.py: injects theft/NTL and operational-disturbance scenarios separately
 - src/simulation_engine.py: coordinates the full workflow and exports results
 - src/dashboard.py: creates the post-run visualization dashboard
+- src/data_quality.py: validates and scores the generated time-series data
+- src/physics_informed.py: checks basic feeder power-balance and voltage plausibility
+- src/explainability.py: produces operator-oriented feature explanations
+- src/federated_learning.py: provides synthetic distributed-client aggregation scaffolding
+- src/deployment_readiness.py: combines the readiness checks into one report
+- deployment_readiness_demo.py: runs the readiness components on a small synthetic dataset
 
 ## Notes on realism
 
@@ -138,13 +151,11 @@ The model is intentionally transparent and configurable. It supports:
 
 The current realism is good for research, education, and presentation. It is not yet intended for direct operational decision-making with live utility data.
 
+The readiness score is an assessment of the synthetic prototype and its architecture. It is not a claim of live utility accuracy or production deployment approval.
+
 ## Future direction
 
-The next step is to upgrade the project from synthetic benchmarking to real utility data once access is available. The intended path is:
-1. AMI integration,
-2. SCADA integration,
-3. GIS-based feeder mapping,
-4. calibration against real measurements.
+The current development focus is synthetic research validation: baseline comparison, repeatable experiments, robustness testing, explainable alerts, and automated tests. Real utility integration is a later phase and is intentionally outside the current implementation scope.
 
 ## License and usage
 

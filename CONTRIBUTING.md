@@ -13,5 +13,17 @@ Contributions are welcome.
 ## Local verification
 
 ```powershell
-.venv\Scripts\python.exe -m pytest -q
+python -m pytest -q
+```
+
+The test suite is configured through pyproject.toml. Install the project dependencies first with:
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+For a behavior-level smoke check, run:
+
+```powershell
+python deployment_readiness_demo.py
 ```

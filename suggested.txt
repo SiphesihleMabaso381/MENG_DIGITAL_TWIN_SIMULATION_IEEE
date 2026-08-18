@@ -1,7 +1,10 @@
 Proposed framework for NTL detection
 
-Simple architectural implementation :
+Simple architectural implementation:
 Multi-Agent Federated Physics-Informed Digital Twin Framework for Explainable NTL Detection
+
+Current implementation boundary:
+The project currently provides a synthetic IEEE-benchmark foundation for this proposed framework. It includes OpenDSS feeder simulation, hybrid metering, NTL and operational-event injection, data-quality checks, physics-informed checks, lightweight explainability, federated-learning scaffolding, and deployment-readiness reporting. A final trained AI detector and live utility decision system are not part of the current phase.
 
 Main idea:
 Build a new NTL detection system that is not only based on AI prediction, but also uses several intelligent agents to check data, physics, digital-twin behaviour, and explainability before making a final decision.
@@ -11,56 +14,58 @@ Instead of saying a model is suspicious, the system should explain why it is sus
 
 Main components:
 1. Local Data Agent
-   - Reads feeder and customer data locally.
+   - Reads the current synthetic feeder and customer data locally.
    - Collects consumption behaviour, meter status, time trends, and operational context.
-   - Prepares clean inputs for the rest of the framework.
+   - Uses the current data-quality module to prepare clean inputs for the rest of the framework.
 
 2. Physics Agent
    - Checks whether the observed pattern is physically possible.
    - Uses power-flow logic, voltage behaviour, feeder topology, and network constraints.
-   - Helps reject unrealistic alerts caused by noise or poor data.
+   - The current physics-informed module performs basic feeder power-balance and voltage-plausibility checks.
+   - A future detector can use these checks to reject unrealistic alerts caused by noise or poor data.
 
 3. Anomaly Agent
-   - Detects possible NTL-related behaviour.
-   - Uses data-driven learning to find unusual consumption, temporal, and pattern-based deviations.
-   - Produces an initial suspicion score for possible NTL activity.
+   - This is currently a proposed research component, not a trained production model.
+   - The simulator already generates NTL events and labeling-ready synthetic data for developing and comparing detection methods.
+   - Future baseline or AI methods can find unusual consumption, temporal, and pattern-based deviations.
 
 4. Explainability Agent
    - Explains the reason for the alert.
    - Shows the evidence used to reach the decision, such as abnormal usage patterns, physical inconsistency, or simulation support.
-   - Makes the decision interpretable to utility engineers and managers.
+   - The current ExplainabilityEngine provides lightweight feature-importance and anomaly explanations.
+   - A future trained detector can use this layer to make decisions interpretable to utility engineers and managers.
 
 5. Digital Twin Agent
-   - Simulates the feeder with and without an NTL condition.
-   - Compares the simulation result with real observations.
+   - The current digital twin simulates synthetic feeder behavior with NTL and operational disturbances.
+   - A future extension can compare NTL and non-NTL counterfactual worlds against observed utility measurements.
    - Uses counterfactual reasoning to test whether the anomaly is better explained by NTL or by normal variation.
 
 6. Coordination Agent
-   - Combines all evidence into one final decision.
-   - Produces a trust-based NTL score using data confidence, physics consistency, anomaly strength, and digital-twin support.
-   - Sends the final alert and explanation to the utility decision layer.
+   - The current DeploymentReadinessEvaluator combines data quality, physics, explainability, federated-learning, and benchmark scores into a readiness report.
+   - A future coordination layer can combine data confidence, physics consistency, anomaly strength, and digital-twin support into an NTL investigation score.
+   - Operational alert delivery is a future workflow, not a current live utility function.
 
 How it works:
-- Each local feeder or utility node learns from its own data.
-- The system shares only useful knowledge, not raw sensitive data.
-- The final decision is based on evidence from data, physics, and simulation.
-- The output is not just a yes/no label, but an explainable and trusted decision.
-- The framework can support both detection and investigation by showing why an event is suspicious.
+- The current simulator generates controlled synthetic data for multiple feeder and meter conditions.
+- The current federated-learning module simulates local client scoring and aggregation; it is not yet a deployed privacy system.
+- The current output combines simulation statistics, data-quality checks, physics checks, explainability, and readiness scores.
+- The proposed future detector would produce an explainable suspicion score rather than an unsupported yes/no claim.
+- The framework is designed to support detection and investigation by showing why a synthetic event is suspicious.
 
-Why it is strong:
-- Better privacy protection
-- Better explainability
-- Better physical consistency
-- Lower false alarms
-- Stronger utility trust and revenue assurance
-- Better support for operational decision-making
+Intended research benefits:
+- Potentially better privacy protection through distributed learning
+- Better explainability through evidence-based reporting
+- Better physical consistency through feeder checks
+- Potentially fewer false alarms after proper model evaluation
+- Stronger utility trust and revenue-assurance support after operational validation
+- Better support for operational decision-making after an approved deployment workflow exists
 
 Simple research positioning:
-The proposed contribution is a unified multi-agent methodology for NTL detection that combines federated learning, explainable AI, physics-informed reasoning, and digital-twin validation into one auditable decision framework for hybrid distribution networks.
+The proposed contribution is a unified methodology for NTL research that combines federated-learning scaffolding, explainable analysis, physics-informed reasoning, and digital-twin validation into one auditable framework for hybrid distribution networks. The current contribution is the synthetic benchmark and readiness foundation; the trained detection method remains a separate research stage.
 
 More detailed architectural view:
 
-Real feeder data
+Synthetic IEEE feeder data
       │
       ▼
 Local Data Agent
@@ -79,6 +84,12 @@ Local Data Agent
            │
            ▼
    Final NTL Decision
+
+Current output:
+Synthetic measurements, NTL event labels, feeder statistics, realism reports, readiness checks, and a deployment-readiness report.
+
+Proposed future output:
+An evaluated and explainable NTL investigation score produced by a trained detection method.
 
 Possible output of the system:
 - NTL suspicion score
